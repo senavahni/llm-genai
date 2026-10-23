@@ -1,0 +1,29 @@
+# OpenVINO runtime & Hugging Face integration
+openvino
+optimum[openvino]
+
+# Model utilities
+transformers
+accelerate
+safetensors
+huggingface_hub
+
+# Image processing & Data
+Pillow
+numpy
+
+# API Framework (Sangat disarankan pakai FastAPI untuk AI karena async)
+fastapi
+uvicorn[standard]
+pydantic
+pydantic-settings
+
+# Database (PostgreSQL)
+SQLAlchemy
+psycopg[binary]
+alembic
+
+# External API Clients (Untuk fallback ke OpenAI/Claude)
+openai
+anthropic
+httpx

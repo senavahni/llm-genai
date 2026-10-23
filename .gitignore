@@ -1,0 +1,11 @@
+.env
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.sqlite3
+*.db
+storage/*
+app/models/modelllm/*
+logs/app.log
+.vscode/
