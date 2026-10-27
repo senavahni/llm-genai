@@ -183,8 +183,9 @@ async def test_auth_context_limits_and_last_used(db):
     assert ctx.scopes == frozenset(key.scopes)
     await key_service.drain()
     async with SessionLocal() as s:
-        last_used = (await s.execute(select(ApiKey.last_used_at).where(ApiKey.id == key.id))
-                     ).scalar_one()
+        last_used = (
+            await s.execute(select(ApiKey.last_used_at).where(ApiKey.id == key.id))
+        ).scalar_one()
     assert last_used is not None
 
 

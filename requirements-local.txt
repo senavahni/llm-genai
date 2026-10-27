@@ -1,0 +1,26 @@
+# Dependency akselerator Local Runtime (TASK-09), versi ter-pin yang sudah diverifikasi di mesin ini
+# (Intel Core Ultra 5 225: iGPU Intel via Vulkan, NPU Intel AI Boost).
+#
+# llama-cpp-python HARUS dari index wheel GPU (jangan dari PyPI biasa → build CPU-only):
+#   Intel Arc/iGPU/AMD : --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/vulkan
+#   NVIDIA             : --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cu124
+# pip install --prefer-binary --only-binary=llama-cpp-python -r requirements-local.txt ^
+#   --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/vulkan
+llama-cpp-python==0.3.36
+
+openvino==2026.4.1
+openvino-tokenizers==2026.4.1.0
+optimum==2.3.0
+optimum-intel==2.2.0
+nncf==3.4.0
+# diffusers terbaru butuh huggingface_hub>=1.32, bentrok dengan optimum-intel (<1.22)
+diffusers==0.39.0
+transformers==5.5.4
+huggingface_hub==1.21.0
+safetensors==0.8.0
+pillow==13.0.0
+psutil==7.2.2
+
+# Torch hanya untuk KONVERSI (optimum-cli), bukan inferensi. Pakai build CPU agar ringan:
+#   pip install torch==2.14.1 --index-url https://download.pytorch.org/whl/cpu
+# NVIDIA saja (ukur VRAM): pynvml

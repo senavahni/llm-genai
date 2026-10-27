@@ -82,9 +82,10 @@ models:
     device: gpu
     runtime_backend: llama_cpp_python
     hf_repo: Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF
-    filename: "*q4_k_m*.gguf"
-    artifact_path: local_models/gguf/qwen2.5-coder-1.5b-q4_k_m.gguf
-    vram_mb: 1300
+    filename: qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
+    artifact_path: local_models/gguf/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
+    vram_mb: 1500
+    artifact_sha256: cc324af070c2ecbfd324a30884d2f951a7ff756aba85cb811a6ec436933bb046
     is_pinned: true
     supports_fim: true
     license: apache-2.0

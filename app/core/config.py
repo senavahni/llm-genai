@@ -38,6 +38,8 @@ class Settings(BaseSettings):
 
     trust_proxy: bool = False
     storage_dir: str = "./storage"
+    sse_heartbeat_s: float = 15.0  # komentar `: ping` saat stream diam; 0 = mati
+    provider_health_timeout_s: float = 5.0
 
     # --- Local Runtime (dipakai gateway & runtime) ---
     runtime_host: str = "127.0.0.1"

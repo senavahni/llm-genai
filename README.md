@@ -5,8 +5,14 @@ model lokal di GPU/NPU (llama.cpp & OpenVINO lewat proses Local Runtime).
 Spesifikasi lengkap: [llm_gateway_docs_v2/docs/PRD.md](llm_gateway_docs_v2/docs/PRD.md),
 task: [llm_gateway_docs_v2/tasks/](llm_gateway_docs_v2/tasks/).
 
-Status: **M1 Fondasi** (TASK-01 s.d. TASK-05) selesai: skeleton, config, error, logging, DB +
-migrasi + seed, autentikasi API key.
+Status:
+- **M1 Fondasi** (TASK-01 – 05) selesai: skeleton, config, error, logging, DB + migrasi + seed,
+  autentikasi API key.
+- **M2 Provider Remote** (TASK-06 – 08) selesai: schema unified, registry, util SSE, adapter
+  OpenAI, Anthropic, Gemini (diuji dengan mock HTTP; smoke test dengan key asli belum).
+- **M3 Local Runtime**: TASK-09 sebagian (probe, script unduh/konversi/ukur, wheel GPU terpasang;
+  unduhan & pengukuran penuh belum, lihat [docs/hardware.md](docs/hardware.md)). TASK-10 selesai:
+  proses runtime + Device Manager + adapter gateway. Backend nyata llama.cpp/OpenVINO = TASK-11/12.
 
 ## Lingkungan
 
@@ -42,9 +48,31 @@ migrasi + seed, autentikasi API key.
 | `scripts\start-postgres.bat` | start PostgreSQL portable, tunggu port 5432 |
 | `scripts\migrate.bat` | `alembic upgrade head` |
 | `scripts\start-gateway.bat` | uvicorn `127.0.0.1:8000` (dev, `--reload`) |
+| `scripts\start-runtime.bat` | Local Runtime `127.0.0.1:8100` dengan supervisor (restart bila crash, maks 5x beruntun; log `logs\runtime-supervisor.log`) |
 
-- `GET /health/live` → `{"status":"ok"}`; Swagger di `/docs` (hanya bila `APP_ENV=dev` atau `ENABLE_DOCS=true`).
-- Log JSON: `logs\app.log`, `logs\error.log`, `logs\access.log` (rotasi harian, UTC).
+- Gateway: `GET /health/live`, `GET /health/ready` (`ok` / `degraded` bila ada provider mati,
+  503 bila DB mati). Swagger di `/docs` (hanya bila `APP_ENV=dev` atau `ENABLE_DOCS=true`).
+- Runtime (header `X-Runtime-Token` = `RUNTIME_TOKEN`): `/v1/chat/completions`, `/v1/completions`,
+  `/v1/embeddings`, `/v1/images/generations`, `GET /runtime/status`,
+  `POST /runtime/models/{name}/load?pin=true` · `/unload`, `POST /runtime/catalog/reload`,
+  `POST /runtime/shutdown`; tanpa token: `/health/live`, `/health/ready`.
+- Provider remote tanpa API key di `.env` otomatis dinonaktifkan (WARNING di log), tidak crash.
+- Log JSON: `logs\app.log`, `logs\error.log`, `logs\access.log`, `logs\runtime.log`,
+  `logs\runtime-error.log` (rotasi harian, UTC).
+
+## Model lokal (TASK-09)
+
+```bat
+call scripts\env.bat
+"%PY%" scripts\probe_devices.py                  :: GPU/NPU/RAM → logs\device_probe.json
+"%PY%" scripts\download_models.py --dry-run      :: daftar file & ukuran (±27 GB)
+"%PY%" scripts\download_models.py --write-yaml   :: unduh + sha256 ke seed_models.yaml
+"%PY%" scripts\convert_openvino.py               :: SD v1.5 fp16/int8 + bge-m3 int8
+"%PY%" scripts\test_npu.py                       :: uji compile/generate di NPU
+"%PY%" scripts\measure_models.py --update-yaml   :: ukur vram_mb, validasi budget
+"%PY%" scripts\manage.py seed --update-local     :: sinkron ke DB
+```
+Akselerator: `requirements-local.txt` (llama-cpp-python wajib dari index wheel GPU).
 
 ## CLI (`scripts\manage.py`)
 

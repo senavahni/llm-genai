@@ -48,10 +48,18 @@ def test_estimate_tokens():
     assert estimate_tokens("abcde") == 2
     messages = [
         {"role": "system", "content": "a" * 8},
-        {"role": "user", "content": [{"type": "text", "text": "b" * 4},
-                                     {"type": "image_url", "image_url": {"url": "data:..."}}]},
-        {"role": "assistant", "content": None,
-         "tool_calls": [{"function": {"name": "abcd", "arguments": "{}"}}]},
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "b" * 4},
+                {"type": "image_url", "image_url": {"url": "data:..."}},
+            ],
+        },
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [{"function": {"name": "abcd", "arguments": "{}"}}],
+        },
     ]
     assert estimate_tokens(messages) == 5  # 8 + 4 + 4 + 2 = 18 char → ceil(18/4)
 

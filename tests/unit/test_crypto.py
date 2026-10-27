@@ -34,6 +34,13 @@ def test_hash_depends_on_pepper():
 def test_parse_key_prefix():
     full_key, prefix, _ = crypto.generate_api_key()
     assert crypto.parse_key_prefix(full_key) == prefix
-    for bad in ["", "lgw_", "sk-abc", "lgw_ABCDEFGH_" + "a" * 43, "lgw_abcdefgh_short",
-                "lgw_abcdefgh_" + "a" * 44, "Bearer " + full_key]:
+    for bad in [
+        "",
+        "lgw_",
+        "sk-abc",
+        "lgw_ABCDEFGH_" + "a" * 43,
+        "lgw_abcdefgh_short",
+        "lgw_abcdefgh_" + "a" * 44,
+        "Bearer " + full_key,
+    ]:
         assert crypto.parse_key_prefix(bad) is None

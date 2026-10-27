@@ -60,13 +60,30 @@ async def _make_chain(session):
     await session.flush()
     session.add_all(
         [
-            RequestAttempt(request_id=req.id, attempt_no=1, provider_code="openvino",
-                           device="npu", status="success", latency_ms=10),
-            RequestPayload(request_id=req.id, request_body={"prompt": "x"},
-                           expires_at=utcnow() + timedelta(days=7)),
-            GeneratedImage(request_id=req.id, project_id=project.id, idx=0,
-                           file_path="images/x.png", width=512, height=512, sha256="a" * 64,
-                           bytes=100, expires_at=utcnow() + timedelta(days=7)),
+            RequestAttempt(
+                request_id=req.id,
+                attempt_no=1,
+                provider_code="openvino",
+                device="npu",
+                status="success",
+                latency_ms=10,
+            ),
+            RequestPayload(
+                request_id=req.id,
+                request_body={"prompt": "x"},
+                expires_at=utcnow() + timedelta(days=7),
+            ),
+            GeneratedImage(
+                request_id=req.id,
+                project_id=project.id,
+                idx=0,
+                file_path="images/x.png",
+                width=512,
+                height=512,
+                sha256="a" * 64,
+                bytes=100,
+                expires_at=utcnow() + timedelta(days=7),
+            ),
         ]
     )
     await session.commit()
@@ -83,8 +100,14 @@ async def test_insert_chain_and_defaults(db):
         await s.refresh(key)
         await s.refresh(project)
         await s.refresh(req)
-        assert key.scopes == ["chat", "completions", "embeddings", "images", "models:read",
-                              "usage:read"]
+        assert key.scopes == [
+            "chat",
+            "completions",
+            "embeddings",
+            "images",
+            "models:read",
+            "usage:read",
+        ]
         assert key.status == "active" and key.role == "client"
         assert project.status == "active" and project.image_retention_days == 7
         assert req.status == "pending" and req.image_count == 0 and req.created_at is not None
@@ -106,9 +129,11 @@ async def test_delete_project_cascades_keys_and_nulls_requests(db):
         await s.execute(text("DELETE FROM projects WHERE id = :id"), {"id": project.id})
         await s.commit()
         assert await _count(s, ApiKey) == 0
-        row = (await s.execute(
-            select(Request.project_id, Request.api_key_id).where(Request.id == req.id)
-        )).one()
+        row = (
+            await s.execute(
+                select(Request.project_id, Request.api_key_id).where(Request.id == req.id)
+            )
+        ).one()
         assert row == (None, None)
         img = (await s.execute(select(GeneratedImage.project_id))).scalar_one()
         assert img is None
@@ -117,13 +142,27 @@ async def test_delete_project_cascades_keys_and_nulls_requests(db):
 
 async def test_client_key_requires_project(db):
     async with SessionLocal() as s:
-        s.add(ApiKey(project_id=None, name="x", role="client", key_prefix="lgw_bbbbbbbb",
-                     key_hash="0" * 64))
+        s.add(
+            ApiKey(
+                project_id=None,
+                name="x",
+                role="client",
+                key_prefix="lgw_bbbbbbbb",
+                key_hash="0" * 64,
+            )
+        )
         with pytest.raises(IntegrityError, match="ck_client_has_project"):
             await s.commit()
         await s.rollback()
-        s.add(ApiKey(project_id=None, name="admin", role="admin", key_prefix="lgw_cccccccc",
-                     key_hash="0" * 64))
+        s.add(
+            ApiKey(
+                project_id=None,
+                name="admin",
+                role="admin",
+                key_prefix="lgw_cccccccc",
+                key_hash="0" * 64,
+            )
+        )
         await s.commit()
 
 
@@ -132,8 +171,15 @@ async def test_local_model_without_backend_rejected(db):
         provider = Provider(code="llamacpp", kind="local", display_name="x")
         s.add(provider)
         await s.flush()
-        s.add(Model(provider_id=provider.id, alias="local/x", upstream_name="x",
-                    model_type="chat", device="gpu"))
+        s.add(
+            Model(
+                provider_id=provider.id,
+                alias="local/x",
+                upstream_name="x",
+                model_type="chat",
+                device="gpu",
+            )
+        )
         with pytest.raises(IntegrityError, match="ck_local_has_backend"):
             await s.commit()
 
@@ -154,8 +200,13 @@ async def test_check_constraints(db, table, column, value):
         await s.flush()
         values = {
             "requests": {"id": uuid.uuid4(), "endpoint": "completions", "requested_model": "m"},
-            "models": {"provider_id": provider.id, "alias": "a", "upstream_name": "u",
-                       "model_type": "chat", "runtime_backend": "llama_cpp_python"},
+            "models": {
+                "provider_id": provider.id,
+                "alias": "a",
+                "upstream_name": "u",
+                "model_type": "chat",
+                "runtime_backend": "llama_cpp_python",
+            },
             "projects": {"slug": "s", "name": "n"},
         }[table]
         values[column] = value
@@ -167,12 +218,20 @@ async def test_check_constraints(db, table, column, value):
 
 async def test_requests_indexes_exist(db):
     async with SessionLocal() as s:
-        rows = (await s.execute(text(
-            "SELECT indexname, indexdef FROM pg_indexes WHERE tablename = 'requests'"
-        ))).all()
+        rows = (
+            await s.execute(
+                text("SELECT indexname, indexdef FROM pg_indexes WHERE tablename = 'requests'")
+            )
+        ).all()
     defs = dict(rows)
-    for name in ["ix_requests_project_time", "ix_requests_key_time", "ix_requests_status_time",
-                 "ix_requests_caller_task", "ix_requests_device_time", "brin_requests_created"]:
+    for name in [
+        "ix_requests_project_time",
+        "ix_requests_key_time",
+        "ix_requests_status_time",
+        "ix_requests_caller_task",
+        "ix_requests_device_time",
+        "brin_requests_created",
+    ]:
         assert name in defs
     assert "USING brin" in defs["brin_requests_created"]
     assert "WHERE" in defs["ix_requests_caller_task"]
@@ -192,14 +251,16 @@ async def test_seed_idempotent_and_complete(db):
         assert await _count(s, ModelRoute) == 9
         n_targets = sum(len(r["targets"]) for r in data["routes"])
         assert await _count(s, ModelRouteTarget) == n_targets
-        local = (await s.execute(
-            select(Provider.base_url, Provider.api_key_env).where(Provider.code == "llamacpp")
-        )).one()
+        local = (
+            await s.execute(
+                select(Provider.base_url, Provider.api_key_env).where(Provider.code == "llamacpp")
+            )
+        ).one()
         assert local.api_key_env == "RUNTIME_TOKEN"
         assert local.base_url.endswith("/v1")
-        coder = (await s.execute(
-            select(Model).where(Model.alias == "local/qwen2.5-coder-1.5b")
-        )).scalar_one()
+        coder = (
+            await s.execute(select(Model).where(Model.alias == "local/qwen2.5-coder-1.5b"))
+        ).scalar_one()
         assert coder.is_pinned and coder.supports_fim
         assert coder.config["source"]["hf_repo"]
 
@@ -216,8 +277,9 @@ async def test_seed_update_local_writes_audit(db):
     async with SessionLocal() as s:
         await manage._seed(s, data, update_local=True)
     async with SessionLocal() as s:
-        model = (await s.execute(select(Model).where(Model.alias == "local/qwen2.5-7b"))
-                 ).scalar_one()
+        model = (
+            await s.execute(select(Model).where(Model.alias == "local/qwen2.5-7b"))
+        ).scalar_one()
         assert model.vram_mb == 5123 and model.artifact_sha256 == "b" * 64
         audit = (await s.execute(select(AuditLog))).scalars().all()
         assert len(audit) == 1

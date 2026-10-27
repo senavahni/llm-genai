@@ -77,8 +77,11 @@ def test_files_are_json_and_redacted(log_dir):
     tmp_path, settings = log_dir
     setup_logging(settings, console=False)
     log = get_logger("test")
-    log.info("upstream_call", headers={"authorization": "Bearer lgw_ab12cd34_secret"},
-             raw="Authorization: Bearer lgw_ab12cd34_secret")
+    log.info(
+        "upstream_call",
+        headers={"authorization": "Bearer lgw_ab12cd34_secret"},
+        raw="Authorization: Bearer lgw_ab12cd34_secret",
+    )
     logging.getLogger("foreign.stdlib").error("stdlib error with sk-proj-abcdefghij1234567890")
     shutdown_logging()
 
@@ -98,8 +101,9 @@ def test_files_are_json_and_redacted(log_dir):
 def test_runtime_component_files(log_dir):
     tmp_path, settings = log_dir
     # log native ditulis level DEBUG: hanya tampil bila LOG_LEVEL=DEBUG
-    setup_logging(settings.model_copy(update={"log_level": "DEBUG"}), component="runtime",
-                  console=False)
+    setup_logging(
+        settings.model_copy(update={"log_level": "DEBUG"}), component="runtime", console=False
+    )
     get_logger("runtime.native").debug("llama_cpp_verbose_line")
     get_logger("runtime").error("device_error")
     shutdown_logging()
@@ -115,8 +119,9 @@ async def test_access_log_one_line_per_request(log_dir):
     app = create_app(settings)
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://t") as c:
-        responses = [await c.get("/health/live", headers={"user-agent": "ua-test"})
-                     for _ in range(3)]
+        responses = [
+            await c.get("/health/live", headers={"user-agent": "ua-test"}) for _ in range(3)
+        ]
         responses.append(await c.get("/missing"))
     shutdown_logging()
 

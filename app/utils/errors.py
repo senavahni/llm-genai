@@ -156,6 +156,13 @@ class DeviceUnavailable(UpstreamError):
     code = "device_unavailable"
 
 
+class ModelLoadFailed(UpstreamError):
+    """Load model lokal gagal (file hilang, konfigurasi melebihi budget, backend error)."""
+
+    http_status = 503
+    code = "model_load_failed"
+
+
 class UnsupportedSize(InvalidRequestError):
     code = "unsupported_size"
     default_param = "size"

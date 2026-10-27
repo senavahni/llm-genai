@@ -11,9 +11,10 @@ __pycache__/
 .ruff_cache/
 *.pyc
 __pycache__/
+
 # logs
-logs/*.log*
-logs/*.jsonl
+logs/*
+!logs/.gitkeep
 
 # model lokal & hasil generasi (folder tetap ada via .gitkeep)
 local_models/**

@@ -1,9 +1,9 @@
 """CLI operasional gateway.
 
-    python scripts\\manage.py seed [--update-local]
-    python scripts\\manage.py create-admin-key --name bootstrap
-    python scripts\\manage.py create-project --slug agent-a --name "Agent A"
-    python scripts\\manage.py create-key --project agent-a --name dev [--scopes chat,models:read]
+python scripts\\manage.py seed [--update-local]
+python scripts\\manage.py create-admin-key --name bootstrap
+python scripts\\manage.py create-project --slug agent-a --name "Agent A"
+python scripts\\manage.py create-key --project agent-a --name dev [--scopes chat,models:read]
 """
 
 import argparse
@@ -39,7 +39,7 @@ from app.utils.helper import utcnow  # noqa: E402
 SEED_FILE = ROOT / "scripts" / "seed_models.yaml"
 # kunci yaml yang bukan kolom tabel models
 _MODEL_NON_COLUMNS = {"provider", "hf_repo", "filename"}
-_LOCAL_UPDATE_FIELDS = ("vram_mb", "artifact_sha256", "config")
+_LOCAL_UPDATE_FIELDS = ("vram_mb", "artifact_sha256", "artifact_path", "config")
 
 
 def _model_values(item: dict[str, Any], provider_ids: dict[str, Any]) -> dict[str, Any]:
@@ -79,8 +79,11 @@ async def _seed(session: AsyncSession, data: dict[str, Any], update_local: bool)
     for r in data["routes"]:
         await session.execute(
             insert(ModelRoute)
-            .values(alias=r["alias"], description=r.get("description"),
-                    strategy=r.get("strategy", "priority"))
+            .values(
+                alias=r["alias"],
+                description=r.get("description"),
+                strategy=r.get("strategy", "priority"),
+            )
             .on_conflict_do_nothing(index_elements=["alias"])
         )
         route_id = (
@@ -89,19 +92,25 @@ async def _seed(session: AsyncSession, data: dict[str, Any], update_local: bool)
         for t in r["targets"]:
             await session.execute(
                 insert(ModelRouteTarget)
-                .values(route_id=route_id, model_id=model_ids[t["model"]],
-                        priority=t.get("priority", 1), weight=t.get("weight", 1))
+                .values(
+                    route_id=route_id,
+                    model_id=model_ids[t["model"]],
+                    priority=t.get("priority", 1),
+                    weight=t.get("weight", 1),
+                )
                 .on_conflict_do_nothing()
             )
     await session.commit()
 
     n_local = len([m for m in data["models"] if m.get("device", "remote") != "remote"])
     db_local = (
-        await session.execute(select(Model.alias).where(Model.device != "remote"))
-    ).scalars().all()
+        (await session.execute(select(Model.alias).where(Model.device != "remote"))).scalars().all()
+    )
     db_routes = (await session.execute(select(ModelRoute.alias))).scalars().all()
-    print(f"seed OK: {len(provider_ids)} provider, {len(db_local)} model lokal "
-          f"(yaml: {n_local}), {len(db_routes)} route")
+    print(
+        f"seed OK: {len(provider_ids)} provider, {len(db_local)} model lokal "
+        f"(yaml: {n_local}), {len(db_routes)} route"
+    )
 
 
 async def _update_local(
@@ -159,8 +168,9 @@ async def cmd_create_admin_key(args: argparse.Namespace) -> None:
 
 async def cmd_create_project(args: argparse.Namespace) -> None:
     async with SessionLocal() as session:
-        project = Project(slug=args.slug, name=args.name, owner=args.owner,
-                          description=args.description)
+        project = Project(
+            slug=args.slug, name=args.name, owner=args.owner, description=args.description
+        )
         session.add(project)
         await session.commit()
         print(f"project dibuat: id={project.id} slug={project.slug}")
@@ -184,8 +194,10 @@ async def cmd_create_key(args: argparse.Namespace) -> None:
             tpm_limit=args.tpm,
             expires_at=expires_at,
         )
-    print(f"key dibuat: id={key.id} prefix={key.key_prefix} project={project.slug} "
-          f"scopes={','.join(key.scopes)}")
+    print(
+        f"key dibuat: id={key.id} prefix={key.key_prefix} project={project.slug} "
+        f"scopes={','.join(key.scopes)}"
+    )
     _print_key(full_key)
 
 
@@ -194,8 +206,11 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
 
     p = sub.add_parser("seed", help="seed providers, models, routes (idempoten)")
-    p.add_argument("--update-local", action="store_true",
-                   help="perbarui vram_mb/artifact_sha256/config model lokal dari yaml")
+    p.add_argument(
+        "--update-local",
+        action="store_true",
+        help="perbarui vram_mb/artifact_sha256/config model lokal dari yaml",
+    )
     p.add_argument("--file", default=str(SEED_FILE))
     p.set_defaults(func=cmd_seed)
 
