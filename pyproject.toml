@@ -1,0 +1,33 @@
+[project]
+name = "llm_gateway"
+version = "0.1.0"
+description = "OpenAI-compatible LLM gateway (remote providers + local GPU/NPU runtime)"
+requires-python = ">=3.11,<3.13"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = ["llm_gateway_docs_v2", "local_models", "storage", "logs"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+# B008: FastAPI memakai Depends() sebagai default argumen.
+ignore = ["B008"]
+
+[tool.ruff.lint.per-file-ignores]
+# revisi hasil autogenerate Alembic
+"migrations/versions/*" = ["E501"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app", "runtime"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"
+markers = ["integration: butuh PostgreSQL (database llm_gateway_test)"]
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true

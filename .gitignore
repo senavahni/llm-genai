@@ -1,11 +1,28 @@
+# secrets
 .env
+.env.legacy
+*.bak
+
+# python
 __pycache__/
-*.pyc
-*.pyo
-*.pyd
-*.sqlite3
-*.db
-storage/*
-app/models/modelllm/*
-logs/app.log
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# logs
+logs/*.log*
+logs/*.jsonl
+
+# model lokal & hasil generasi (folder tetap ada via .gitkeep)
+local_models/**
+!local_models/**/
+!local_models/**/.gitkeep
+storage/**
+!storage/**/
+!storage/**/.gitkeep
+*.gguf
+*.bin
+
+# editor
 .vscode/
