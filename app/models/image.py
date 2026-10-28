@@ -33,9 +33,7 @@ class GeneratedImage(CreatedAtMixin, Base):
     project_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("projects.id", ondelete="SET NULL")
     )
-    model_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("models.id", ondelete="SET NULL")
-    )
+    model_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("models.id", ondelete="SET NULL"))
     idx: Mapped[int] = mapped_column(SmallInteger)  # urutan gambar dalam request
     file_path: Mapped[str] = mapped_column(Text)  # relatif terhadap STORAGE_DIR
     mime_type: Mapped[str] = mapped_column(String(32), server_default=text("'image/png'"))

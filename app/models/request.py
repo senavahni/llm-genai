@@ -115,9 +115,7 @@ class RequestAttempt(CreatedAtMixin, Base):
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     request_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("requests.id", ondelete="CASCADE"))
     attempt_no: Mapped[int] = mapped_column(SmallInteger)
-    model_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("models.id", ondelete="SET NULL")
-    )
+    model_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("models.id", ondelete="SET NULL"))
     provider_code: Mapped[str] = mapped_column(String(32))
     device: Mapped[str | None] = mapped_column(String(8))
     status: Mapped[str] = mapped_column(String(16))

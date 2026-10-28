@@ -25,9 +25,7 @@ async def get_auth(request: Request) -> AuthContext:
         raise AuthenticationError("API key tidak ada (Authorization: Bearer ... atau x-api-key)")
     ctx = await key_service.authenticate(raw)
     request.state.auth = ctx
-    structlog.contextvars.bind_contextvars(
-        project_slug=ctx.project_slug, key_prefix=ctx.key_prefix
-    )
+    structlog.contextvars.bind_contextvars(project_slug=ctx.project_slug, key_prefix=ctx.key_prefix)
     return ctx
 
 

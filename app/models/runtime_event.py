@@ -32,9 +32,7 @@ class RuntimeEvent(CreatedAtMixin, Base):
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    model_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("models.id", ondelete="SET NULL")
-    )
+    model_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("models.id", ondelete="SET NULL"))
     model_alias: Mapped[str | None] = mapped_column(String(128))  # snapshot nama untuk histori
     device: Mapped[str] = mapped_column(String(8))
     event: Mapped[str] = mapped_column(String(24))

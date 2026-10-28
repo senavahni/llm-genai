@@ -37,8 +37,8 @@ def parse_key_prefix(raw_key: str) -> str | None:
 def generate_api_key(*, pepper: bytes | None = None) -> tuple[str, str, str]:
     """Kembalikan (full_key, key_prefix, key_hash). full_key hanya ditampilkan sekali."""
     while True:
-        prefix = KEY_SCHEME + "_" + "".join(
-            secrets.choice(_PREFIX_ALPHABET) for _ in range(PREFIX_LEN)
+        prefix = (
+            KEY_SCHEME + "_" + "".join(secrets.choice(_PREFIX_ALPHABET) for _ in range(PREFIX_LEN))
         )
         full_key = f"{prefix}_{secrets.token_urlsafe(32)}"
         if KEY_RE.match(full_key):  # token_urlsafe(32) selalu 43 char; dijaga eksplisit

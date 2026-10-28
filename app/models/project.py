@@ -27,13 +27,9 @@ class Project(TimestampMixin, Base):
     payload_retention_days: Mapped[int] = mapped_column(Integer, server_default=text("7"))
     image_retention_days: Mapped[int] = mapped_column(Integer, server_default=text("7"))
     default_model: Mapped[str | None] = mapped_column(String(128))
-    metadata_: Mapped[dict[str, Any]] = mapped_column(
-        "metadata", JSONB, server_default=EMPTY_JSONB
-    )
+    metadata_: Mapped[dict[str, Any]] = mapped_column("metadata", JSONB, server_default=EMPTY_JSONB)
 
-    api_keys: Mapped[list["ApiKey"]] = relationship(
-        back_populates="project", passive_deletes=True
-    )
+    api_keys: Mapped[list["ApiKey"]] = relationship(back_populates="project", passive_deletes=True)
     allowed_models: Mapped[list["ProjectAllowedModel"]] = relationship(
         cascade="all, delete-orphan", passive_deletes=True
     )
