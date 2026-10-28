@@ -15,6 +15,7 @@ from app.core.database import SessionLocal
 from app.models import RuntimeEvent
 from app.utils.helper import utcnow
 from app.utils.logger import get_logger
+from runtime.core import metrics as runtime_metrics
 
 log = get_logger("runtime.events")
 
@@ -58,6 +59,7 @@ class EventService:
         }
         fields = {k: v for k, v in values.items() if v not in (None, {}) and k != "event"}
         log.info("runtime_event", runtime_event=event, **fields)
+        runtime_metrics.on_event(event, model_alias, device, duration_ms)
         task = asyncio.ensure_future(self._write(values))
         self._tasks.add(task)
         task.add_done_callback(self._tasks.discard)

@@ -28,6 +28,7 @@ def create_runtime_app(settings: Settings | None = None, *, with_lifespan: bool 
     app.include_router(health.router)
     app.include_router(v1.router)
     app.include_router(runtime.router)
+    app.include_router(runtime.metrics_router)
     return app
 
 

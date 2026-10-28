@@ -296,8 +296,19 @@ class LocalRuntimeProvider(OpenAIProvider):
             ok=resp.status_code == 200 and bool(data.get("ready")),
             latency_ms=int((time.perf_counter() - start) * 1000),
             detail=None if resp.status_code == 200 else f"runtime HTTP {resp.status_code}",
-            extra={k: v for k, v in data.items() if k in ("devices", "pinned", "ready")},
+            extra={
+                k: v
+                for k, v in data.items()
+                if k in ("devices", "pinned", "ready", "memory", "progress", "status")
+            },
         )
+
+    async def metrics_text(self, timeout: float = 5.0) -> str:
+        """Teks Prometheus runtime (`GET /metrics`, token) untuk digabung ke /metrics gateway."""
+        url = self.base_url.removesuffix("/v1") + "/metrics"
+        resp = await self.http.get(url, headers=self.default_headers(), timeout=timeout)
+        resp.raise_for_status()
+        return str(resp.text)
 
 
 def _json(resp: httpx2.Response) -> dict[str, Any]:

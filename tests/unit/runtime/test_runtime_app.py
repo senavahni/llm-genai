@@ -78,6 +78,36 @@ def _client(app) -> httpx2.AsyncClient:
     return httpx2.AsyncClient(transport=httpx2.ASGITransport(app=app), base_url="http://rt")
 
 
+async def test_health_ready_warming_up_progress_then_ready():  # TASK-18 AC1b
+    settings = get_settings()
+    catalog = RuntimeCatalog(session_factory=None)  # type: ignore[arg-type]
+    pinned = spec("local/pin", 500, device="npu", pinned=True)
+    catalog.set({"pin": pinned, "chat-fast": SPECS["chat-fast"]})
+    app = create_runtime_app(settings, with_lifespan=False)
+    app.state.rt = build_state(
+        settings,
+        _probe(),
+        catalog,
+        _Events(),
+        backend_factory=FakeBackend,  # type: ignore[arg-type]
+    )
+    async with _client(app) as c:
+        r = await c.get("/health/ready")
+        assert r.status_code == 503
+        assert r.json()["status"] == "warming_up" and r.json()["progress"] == "loaded 0/1"
+        await app.state.rt.managers["npu"].load(pinned, "warmup")
+        r = await c.get("/health/ready")
+        assert r.status_code == 200 and r.json()["progress"] == "loaded 1/1"
+        assert r.json()["memory"]["npu"]["used_mb"] == 500
+        # /metrics runtime: wajib token, memuat memori device & model termuat
+        assert (await c.get("/metrics")).status_code == 401
+        text = (await c.get("/metrics", headers=TOKEN)).text
+    assert 'runtime_device_memory_used_mb{device="npu"} 500.0' in text
+    assert 'runtime_model_loaded{device="npu",model="local/pin",pinned="true"} 1.0' in text
+    for m in app.state.rt.managers.values():
+        m.close()
+
+
 async def test_requires_runtime_token(runtime_app):
     async with _client(runtime_app) as c:
         for path in ("/v1/chat/completions", "/runtime/status"):

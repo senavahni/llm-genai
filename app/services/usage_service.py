@@ -26,6 +26,7 @@ from app.schemas.catalog import ModelConfig
 from app.services.context import Outcome, RequestCtx
 from app.services.quota_service import quota_service
 from app.services.ratelimit_service import ratelimit_service
+from app.utils import metrics
 from app.utils.errors import GatewayError, ServiceUnavailable
 from app.utils.helper import utcnow
 from app.utils.logger import get_logger
@@ -241,6 +242,7 @@ class UsageService:
             images=record["image_count"],
             cost=Decimal(record["cost_usd"]),
         )
+        metrics.observe_request(ctx, record)
         await self.persist(record)
 
     def finish_stream(

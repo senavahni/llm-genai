@@ -64,8 +64,13 @@ Memberi sinyal kesehatan untuk script start, Traefik, dan pemantauan sederhana.
 - `gateway_requests_by_device_total{device="cpu"}` harus 0 di produksi (dipakai sebagai alarm NF9).
 
 ## Deliverables
-- [ ] `app/routes/health.py`, `app/utils/metrics.py`
-- [ ] `scripts/healthcheck.py` (dipakai `start-all.bat` untuk menunggu runtime & gateway siap; mendukung header token)
+- [x] `app/routes/health.py`, `app/utils/metrics.py` (+ `health_service.py`, `health_controller.py`,
+      `runtime/core/metrics.py`, runtime `GET /metrics` ber-token, progres warmup di runtime
+      `/health/ready`)
+- [x] `scripts/healthcheck.py` (dipakai `start-all.bat` untuk menunggu runtime & gateway siap; mendukung header token)
+
+> Catatan 28 Okt 2026: contoh JSON di atas masih menyebut `llamacpp`/`bge-m3`; katalog sekarang
+> hanya provider `openvino` dengan pinned `local/qwen2.5-coder-1.5b` & `local/sd-1.5`.
 
 ## Acceptance Criteria
 1. Matikan PostgreSQL → `/health/ready` 503 `not_ready`; matikan runtime → 200 `degraded` dengan `runtime.ok=false`.

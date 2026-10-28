@@ -16,6 +16,7 @@ from app.services.quota_service import quota_service
 from app.services.ratelimit_service import DEFAULT_COMPLETION_ESTIMATE, ratelimit_service
 from app.services.router_service import Router, aclose_quietly
 from app.services.usage_service import usage_service
+from app.utils import metrics
 from app.utils.errors import GatewayError, ServiceUnavailable
 from app.utils.helper import estimate_tokens
 from app.utils.logger import get_logger
@@ -46,6 +47,7 @@ async def admit_and_start(ctx: RequestCtx, est_tokens: int, *, images: int = 0) 
     try:
         await quota_service.check(ctx.auth.project_id, images=images)
         await usage_service.start(ctx)
+        metrics.request_started(ctx.endpoint)  # dikurangi di usage_service.finish
     except BaseException as exc:
         ratelimit_service.release(reservation)
         if isinstance(exc, GatewayError):

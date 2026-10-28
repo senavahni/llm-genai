@@ -10,11 +10,13 @@ from collections.abc import AsyncIterator
 from typing import Any
 
 from app.utils.errors import DeviceUnavailable
+from runtime.core import metrics as runtime_metrics
 from runtime.core.catalog import LocalModelSpec, RuntimeCatalog
 from runtime.device.manager import DeviceManager, Lease
 
 
 def x_runtime(lease: Lease, infer_ms: int | None) -> dict[str, Any]:
+    runtime_metrics.QUEUE_WAIT.labels(lease.spec.alias).observe(lease.queue_ms / 1000)
     return {
         "device": lease.device,
         "backend": lease.spec.runtime_backend,
@@ -56,10 +58,14 @@ class InferenceService:
         async with manager.acquire(spec, request_id) as lease:
             start = time.perf_counter()
             result: dict[str, Any] = await getattr(lease.backend, method)(body)
+            elapsed = time.perf_counter() - start
             result["x_runtime"] = _with_warnings(
-                x_runtime(lease, int((time.perf_counter() - start) * 1000)),
-                result.pop("_warnings", None),
+                x_runtime(lease, int(elapsed * 1000)), result.pop("_warnings", None)
             )
+        usage = result.get("usage") or {}
+        runtime_metrics.observe_generation(
+            spec.alias, int(usage.get("completion_tokens") or 0), elapsed
+        )
         return result
 
     async def images(
@@ -69,7 +75,14 @@ class InferenceService:
         async with manager.acquire(spec, request_id) as lease:
             start = time.perf_counter()
             images = await lease.backend.generate_images(body, cancel)
-            meta = x_runtime(lease, int((time.perf_counter() - start) * 1000))
+            elapsed = time.perf_counter() - start
+            meta = x_runtime(lease, int(elapsed * 1000))
+        if images:
+            size = f"{images[0].width}x{images[0].height}"
+            for _ in images:
+                runtime_metrics.IMAGE_SECONDS.labels(spec.alias, size).observe(
+                    elapsed / len(images)
+                )
         warnings = sorted({w for img in images for w in img.warnings})
         if warnings:
             meta["warnings"] = warnings
@@ -117,11 +130,17 @@ class InferenceService:
         start = time.perf_counter()
         last_id: str | None = None
         warnings: list[str] = []
+        completion_tokens = 0
         try:
             async for chunk in source:
                 last_id = chunk.get("id", last_id)
                 warnings += chunk.pop("_warnings", None) or []
+                if chunk.get("usage"):
+                    completion_tokens = int(chunk["usage"].get("completion_tokens") or 0)
                 yield chunk
+            runtime_metrics.observe_generation(
+                lease.spec.alias, completion_tokens, time.perf_counter() - start
+            )
             yield {
                 "id": last_id,
                 "object": "chat.completion.chunk" if method == "chat" else "text_completion",

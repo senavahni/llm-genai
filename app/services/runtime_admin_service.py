@@ -96,9 +96,12 @@ async def unload(
 async def reload_caches(
     session: AsyncSession, actor: Actor, registry: "ProviderRegistry | None"
 ) -> dict[str, Any]:
+    from app.services.health_service import health_service
+
     warnings = await reload_everything(registry, runtime=True)
     key_service.invalidate()
     quota_service.invalidate()
+    health_service.invalidate()
     after = {"registry": "reloaded", "warnings": warnings}
     audit_service.record(session, actor, "cache.reload", "system", None, None, after)
     await session.commit()

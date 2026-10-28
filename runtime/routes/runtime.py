@@ -16,3 +16,7 @@ router.add_api_route(
 )
 router.add_api_route("/catalog/reload", c.reload_catalog, methods=["POST"], response_model=None)
 router.add_api_route("/shutdown", c.shutdown, methods=["POST"], response_model=None)
+
+# /metrics (Prometheus) juga wajib token; gateway menggabungkannya ke /metrics miliknya
+metrics_router = APIRouter(tags=["metrics"], dependencies=[Depends(require_runtime_token)])
+metrics_router.add_api_route("/metrics", c.metrics, methods=["GET"], response_model=None)

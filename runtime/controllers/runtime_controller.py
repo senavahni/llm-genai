@@ -3,9 +3,11 @@ import signal
 from typing import Any
 
 from fastapi import Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
+from prometheus_client import CONTENT_TYPE_LATEST
 
 from app.utils.logger import get_logger
+from runtime.core import metrics as runtime_metrics
 from runtime.core.state import RuntimeState
 
 log = get_logger("runtime.admin")
@@ -71,18 +73,29 @@ async def shutdown(request: Request) -> dict[str, Any]:
     return {"status": "shutting_down"}
 
 
+async def metrics(request: Request) -> Response:
+    state: RuntimeState | None = getattr(request.app.state, "rt", None)
+    return Response(runtime_metrics.render(state), media_type=CONTENT_TYPE_LATEST)
+
+
 async def health_ready(request: Request) -> JSONResponse:
     state: RuntimeState | None = getattr(request.app.state, "rt", None)
     if state is None:
         return JSONResponse({"ready": False, "status": "starting"}, status_code=503)
+    pinned = state.pinned_status()
     body = {
         "ready": state.ready,
         "status": "ok" if state.ready else "warming_up",
+        # progres warmup/compile NPU pertama, mis. "loaded 1/2"
+        "progress": f"loaded {sum(pinned.values())}/{len(pinned)}",
         "devices": {
             "gpu": {"ok": state.probe.gpu.available, "name": state.probe.gpu.name},
             "npu": {"ok": state.probe.npu.available, "name": state.probe.npu.name},
         },
-        "pinned": state.pinned_status(),
+        "pinned": pinned,
         "warmup_errors": state.warmup_errors,
+        "memory": {
+            d: {"used_mb": m.used_mb, "budget_mb": m.budget_mb} for d, m in state.managers.items()
+        },
     }
     return JSONResponse(body, status_code=200 if state.ready else 503)
