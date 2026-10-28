@@ -22,6 +22,10 @@ def catalog_spec(alias: str, **config: Any) -> LocalModelSpec:
         vram_mb=int(item["vram_mb"]),
         is_pinned=bool(item.get("is_pinned")),
         supports_fim=bool(item.get("supports_fim")),
+        supports_tools=bool(item.get("supports_tools")),
+        supports_vision=bool(item.get("supports_vision")),
+        max_output_tokens=item.get("max_output_tokens"),
+        context_window=item.get("context_window"),
         config={**(item.get("config") or {}), **config},
     )
 

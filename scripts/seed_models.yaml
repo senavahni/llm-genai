@@ -72,7 +72,8 @@ models:
     license: apache-2.0
     context_window: 4096
     max_output_tokens: 1024
-    config: {device: NPU, max_prompt_len: 2048, min_response_len: 256,
+    config: {device: NPU, max_prompt_len: 2048, min_response_len: 256, prefill_chunk_size: 256,
+             fim_max_prompt_tokens: 256,
              fim_template: "<|fim_prefix|>{prefix}<|fim_suffix|>{suffix}<|fim_middle|>",
              fim_stop: ["<|endoftext|>", "<|fim_pad|>", "<|file_sep|>"],
              cache_dir: local_models/ov_cache}

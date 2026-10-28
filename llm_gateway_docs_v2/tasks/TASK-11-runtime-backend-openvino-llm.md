@@ -104,14 +104,26 @@ tokenizer = pipe.get_tokenizer()
 - `generate(prompt, images=[...], generation_config=cfg)`; template chat diterapkan pipeline
   (menyisipkan token gambar). Streaming & cancel sama dengan LLM.
 
+### Catatan implementasi (hasil uji hardware)
+- **TTFT FIM di NPU**: prefill NPU berjalan per chunk statis. `prefill_chunk_size: 256`
+  (`NPUW_LLM_PREFILL_CHUNK_SIZE`) + `fim_max_prompt_tokens: 256` → TTFT 1,6 s → **0,25 s**.
+  Streamer per token buatan sendiri (TextStreamer bawaan menahan ±3 token) dan stop FIM satu-token
+  lewat `stop_token_ids` (bukan `stop_strings`, yang menahan stream 1 token) memangkas sisa ±150 ms.
+- **Qwen2.5-Coder-7B** kadang memanggil tool dengan format menyimpang
+  (```` ```xml <tools>{…}</tools>``` ````). `parse_tool_output` menerima format ini hanya bila
+  seluruh output adalah objek JSON dengan `name` dari tools caller; di stream, awal output yang
+  mungkin tool call ditahan sampai jelas (jawaban kode biasa tetap mengalir).
+
 ## Deliverables
-- [ ] `ov_llm_backend.py`, `ov_vlm_backend.py`, `image_input.py`
-- [x] `tool_parsers.py` (`parse_hermes`) + unit test (dibuat lebih dulu untuk smoke test TASK-09)
-- [ ] Parser stream tool call + unit test
-- [ ] Validator device config (tolak `CPU`/`AUTO`/`HETERO`/`MULTI`)
-- [ ] Unit test dengan pipeline palsu: pemetaan parameter, JSON mode, stream, cancel, FIM pangkas
-- [ ] Test hardware (`@pytest.mark.gpu` / `@pytest.mark.npu`) per model: chat, stream, cancel;
-      tools untuk model `supports_tools`; FIM; vision
+- [x] `ov_llm_backend.py`, `ov_vlm_backend.py`, `image_input.py`
+- [x] `tool_parsers.py` (`parse_hermes`, `parse_lenient`, `StreamToolParser`) + unit test
+- [x] Validator device config (tolak `CPU`/`AUTO`/`HETERO`/`MULTI`) — `ov_common.validate_device`
+- [x] Unit test dengan pipeline palsu: pemetaan parameter, JSON mode, stream, cancel, FIM pangkas,
+      stop string, vision, SSRF (`tests/unit/runtime/test_ov_llm.py`, `test_image_input.py`,
+      `test_tool_stream_parser.py`)
+- [x] Test hardware (`pytest --hardware tests/hardware/test_llm.py`): tools multi-turn
+      (Qwen2.5-7B & Coder-7B, stream & non-stream), stream, cancel, JSON ×100, FIM TTFT, vision —
+      semua lulus
 
 ## Acceptance Criteria
 1. Keempat model Qwen dapat dipanggil via runtime di device katalognya (GPU/NPU); tidak ada

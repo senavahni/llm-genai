@@ -24,6 +24,12 @@ def x_runtime(lease: Lease, infer_ms: int | None) -> dict[str, Any]:
     }
 
 
+def _with_warnings(meta: dict[str, Any], warnings: list[str] | None) -> dict[str, Any]:
+    if warnings:
+        meta["warnings"] = sorted(set(warnings))
+    return meta
+
+
 class InferenceService:
     def __init__(self, catalog: RuntimeCatalog, managers: dict[str, DeviceManager]) -> None:
         self.catalog = catalog
@@ -50,7 +56,10 @@ class InferenceService:
         async with manager.acquire(spec, request_id) as lease:
             start = time.perf_counter()
             result: dict[str, Any] = await getattr(lease.backend, method)(body)
-            result["x_runtime"] = x_runtime(lease, int((time.perf_counter() - start) * 1000))
+            result["x_runtime"] = _with_warnings(
+                x_runtime(lease, int((time.perf_counter() - start) * 1000)),
+                result.pop("_warnings", None),
+            )
         return result
 
     async def images(
@@ -107,16 +116,20 @@ class InferenceService:
     ) -> AsyncIterator[dict[str, Any]]:
         start = time.perf_counter()
         last_id: str | None = None
+        warnings: list[str] = []
         try:
             async for chunk in source:
                 last_id = chunk.get("id", last_id)
+                warnings += chunk.pop("_warnings", None) or []
                 yield chunk
             yield {
                 "id": last_id,
                 "object": "chat.completion.chunk" if method == "chat" else "text_completion",
                 "model": lease.spec.upstream_name,
                 "choices": [],
-                "x_runtime": x_runtime(lease, int((time.perf_counter() - start) * 1000)),
+                "x_runtime": _with_warnings(
+                    x_runtime(lease, int((time.perf_counter() - start) * 1000)), warnings
+                ),
             }
         finally:
             aclose = getattr(source, "aclose", None)

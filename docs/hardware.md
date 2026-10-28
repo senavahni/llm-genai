@@ -99,8 +99,20 @@ Waktu CPU proses ÷ waktu dinding selama generate (10 core → nilai maksimal ±
 4. **NPU dipakai bersama SD dan Coder-1.5B.** Request autocomplete bisa menunggu selama SD
    generate (±20 s). Bila latensi autocomplete lebih penting, Coder-1.5B bisa dipindah ke GPU
    (27 token/s, IR GPU harus diunduh ulang) dengan konsekuensi berbagi GPU dengan model 7B.
-5. **FIM Coder-1.5B di NPU: TTFT 1,7 s untuk prompt 541 token**, jauh dari target NF11 (p50 < 300 ms).
-   Prompt FIM perlu dibatasi ±128–256 token; diukur ulang di TASK-11.
+5. **FIM Coder-1.5B di NPU** (TASK-11): prefill NPU berjalan per chunk statis, jadi TTFT
+   ditentukan ukuran chunk, bukan panjang prompt. Hasil ukur (first token, prompt 20 / 237 token):
+
+   | `NPUW_LLM_PREFILL_CHUNK_SIZE` | prompt 20 tok | prompt 237 tok | prompt 454 tok |
+   |---|---|---|---|
+   | default (MAX_PROMPT_LEN 2048) | 1.597 ms | – | 1.743 ms |
+   | 512 | 463 ms | – | 465 ms |
+   | **256 (dipakai)** | **254 ms** | **254 ms** | 514 ms |
+   | 128 | 150 ms | 292 ms | 583 ms |
+
+   Katalog: `prefill_chunk_size: 256`, `fim_max_prompt_tokens: 256` → TTFT end-to-end lewat
+   backend **251 ms** (target NF11 < 300 ms terpenuhi). Konteks FIM ±256 token (±20–30 baris
+   sekitar kursor) adalah kompromi latensi; naikkan `fim_max_prompt_tokens` bila kualitas lebih
+   penting (±500 ms untuk 512 token).
 6. **Tool calling & JSON**: `Tokenizer.apply_chat_template(..., tools=[...])` menyisipkan definisi
    tools lewat template Qwen native; output `<tool_call>` di-parse `runtime/backends/tool_parsers.py`.
    `StructuredOutputConfig(json_schema=...)` menghasilkan JSON valid. Keduanya lolos smoke test.

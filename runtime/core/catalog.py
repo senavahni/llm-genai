@@ -28,6 +28,10 @@ class LocalModelSpec:
     vram_mb: int = 0
     is_pinned: bool = False
     supports_fim: bool = False
+    supports_tools: bool = False
+    supports_vision: bool = False
+    max_output_tokens: int | None = None
+    context_window: int | None = None
     config: dict[str, Any] = field(default_factory=dict)
     id: uuid.UUID | None = None
 
@@ -57,6 +61,10 @@ class LocalModelSpec:
             vram_mb=row.vram_mb or 0,
             is_pinned=row.is_pinned,
             supports_fim=row.supports_fim,
+            supports_tools=row.supports_tools,
+            supports_vision=row.supports_vision,
+            max_output_tokens=row.max_output_tokens,
+            context_window=row.context_window,
             config=dict(row.config or {}),
         )
 
