@@ -212,8 +212,10 @@ class KeyService:
         tpm_limit: int | None = None,
         expires_at: datetime | None = None,
         created_by: uuid.UUID | None = None,
+        commit: bool = True,
     ) -> tuple[str, ApiKey]:
-        """Buat key baru. `full_key` dikembalikan sekali ini saja dan tidak disimpan."""
+        """Buat key baru. `full_key` dikembalikan sekali ini saja dan tidak disimpan.
+        commit=False: hanya flush (pemanggil meng-commit bersama audit log)."""
         scope_list = self._validate(role, scopes, project_id)
         full_key, prefix, key_hash = crypto.generate_api_key()
         key = ApiKey(
@@ -229,8 +231,12 @@ class KeyService:
             created_by=created_by,
         )
         session.add(key)
-        await session.commit()
-        await session.refresh(key)
+        if commit:
+            await session.commit()
+            await session.refresh(key)
+        else:
+            await session.flush()
+            await session.refresh(key)
         log.info("api_key_created", key_prefix=prefix, role=role, project_id=str(project_id))
         return full_key, key
 
@@ -241,20 +247,33 @@ class KeyService:
         return key
 
     async def revoke_key(
-        self, session: AsyncSession, key_id: uuid.UUID, reason: str | None = None
+        self,
+        session: AsyncSession,
+        key_id: uuid.UUID,
+        reason: str | None = None,
+        *,
+        commit: bool = True,
     ) -> ApiKey:
         key = await self._get(session, key_id)
         if key.status != "revoked":
             key.status = "revoked"
             key.revoked_at = utcnow()
             key.revoked_reason = reason
-            await session.commit()
+            if commit:
+                await session.commit()
+            else:
+                await session.flush()
         self.invalidate(key.key_prefix)
         log.info("api_key_revoked", key_prefix=key.key_prefix, reason=reason)
         return key
 
     async def rotate_key(
-        self, session: AsyncSession, key_id: uuid.UUID, *, created_by: uuid.UUID | None = None
+        self,
+        session: AsyncSession,
+        key_id: uuid.UUID,
+        *,
+        created_by: uuid.UUID | None = None,
+        commit: bool = True,
     ) -> tuple[str, ApiKey]:
         """Buat key baru dengan atribut sama, lalu revoke key lama."""
         old = await self._get(session, key_id)
@@ -270,8 +289,9 @@ class KeyService:
             tpm_limit=old.tpm_limit,
             expires_at=old.expires_at,
             created_by=created_by or old.created_by,
+            commit=False,
         )
-        await self.revoke_key(session, old.id, reason=f"rotated -> {new.key_prefix}")
+        await self.revoke_key(session, old.id, reason=f"rotated -> {new.key_prefix}", commit=commit)
         return full_key, new
 
 

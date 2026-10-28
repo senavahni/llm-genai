@@ -178,6 +178,22 @@ class ContextLengthExceeded(InvalidRequestError):
     code = "context_length_exceeded"
 
 
+class Conflict(GatewayError):
+    """Bentrok state: If-Match tidak cocok, entitas masih dipakai, alias duplikat."""
+
+    http_status = 409
+    error_type = "invalid_request_error"
+    code = "conflict"
+
+
+class Unprocessable(GatewayError):
+    """Request valid secara format tetapi melanggar aturan (mis. budget VRAM pinned)."""
+
+    http_status = 422
+    error_type = "invalid_request_error"
+    code = "unprocessable"
+
+
 class RequestCancelled(GatewayError):
     """Client memutus koneksi / membatalkan di tengah inferensi (status ala nginx 499)."""
 

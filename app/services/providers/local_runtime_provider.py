@@ -247,6 +247,25 @@ class LocalRuntimeProvider(OpenAIProvider):
             images=images, upstream_model=model.upstream_name, runtime_meta=parse_runtime_meta(data)
         )
 
+    async def runtime_request(
+        self,
+        method: str,
+        path: str,
+        *,
+        params: dict[str, Any] | None = None,
+        timeout: float = 30.0,
+    ) -> tuple[int, dict[str, Any]]:
+        """Panggil endpoint admin runtime (`/runtime/*`) dengan X-Runtime-Token."""
+        url = self.base_url.removesuffix("/v1") + path
+        resp = await self.http.request(
+            method,
+            url,
+            params=params,
+            headers={**self.default_headers(), **self.request_headers()},
+            timeout=timeout,
+        )
+        return resp.status_code, _json(resp)
+
     async def loaded_aliases(self) -> set[str]:
         """Alias model yang sedang termuat di runtime (dipakai router `prefer_loaded`)."""
         url = self.base_url.removesuffix("/v1") + "/runtime/status"

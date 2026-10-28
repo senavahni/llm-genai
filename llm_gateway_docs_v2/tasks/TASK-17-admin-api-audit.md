@@ -57,10 +57,17 @@ Mengelola project, key, provider, model, route, kuota, dan menelusuri request se
 - Concurrency edit: `PATCH` menerima `If-Match` berupa `updated_at` ISO (opsional) → 409 jika berbeda.
 
 ## Deliverables
-- [ ] Seluruh route/controller/service/schema admin
-- [ ] `audit_service.py` + integrasi di setiap operasi tulis
-- [ ] Koleksi request contoh `docs/admin-api.http` (format REST Client / bisa dipakai di VS Code)
-- [ ] Test integrasi alur: buat project → set allowed models → buat key → pakai key → revoke → ditolak
+- [x] Seluruh route/controller/service/schema admin (`app/routes/admin/*`, `app/controllers/admin/*`,
+      `project_service`, `model_service`, `admin_query_service`, `runtime_admin_service`,
+      `schemas/admin.py`)
+- [x] `audit_service.py` + integrasi di setiap operasi tulis (transaksi sama; `key_service`
+      mendukung `commit=False`)
+- [x] Koleksi request contoh `docs/admin-api.http` (format REST Client / bisa dipakai di VS Code)
+- [x] Test integrasi alur: buat project → set allowed models → buat key → pakai key → revoke → ditolak
+      (`tests/integration/test_admin.py`)
+
+Catatan: budget pinned memakai `GPU/NPU_TOTAL_MB − RESERVE` dari `.env` (bukan angka tetap
+7200/7500). AC7 diuji dengan runtime palsu; `runtime_events` (`load`) dicatat runtime sendiri.
 
 ## Acceptance Criteria
 1. Setiap operasi tulis admin menghasilkan tepat 1 baris `audit_logs` dalam transaksi yang sama (rollback → audit ikut batal).

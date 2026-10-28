@@ -1,0 +1,223 @@
+### Admin API — koleksi request (ekstensi VS Code "REST Client" / JetBrains HTTP Client)
+### Isi variabel di bawah. Key admin: scripts\manage.py create-admin-key --name bootstrap
+@base = http://127.0.0.1:8000
+@admin = lgw_GANTI_DENGAN_KEY_ADMIN
+@project = 00000000-0000-0000-0000-000000000000
+@key = 00000000-0000-0000-0000-000000000000
+
+### ---------------------------------------------------------------- projects
+GET {{base}}/admin/projects
+Authorization: Bearer {{admin}}
+
+### Buat project (slug ^[a-z0-9][a-z0-9-]{1,62}$) + pola model sekaligus
+POST {{base}}/admin/projects
+Authorization: Bearer {{admin}}
+Content-Type: application/json
+
+{
+  "slug": "agent-riset",
+  "name": "Agent Riset",
+  "owner": "tim-data",
+  "log_payloads": false,
+  "payload_retention_days": 7,
+  "image_retention_days": 7,
+  "allowed_models": ["smart", "code", "autocomplete", "anthropic/*", "openai/*", "local/*"]
+}
+
+###
+GET {{base}}/admin/projects/{{project}}
+Authorization: Bearer {{admin}}
+
+### PATCH: If-Match opsional (updated_at terakhir) → 409 bila data berubah
+PATCH {{base}}/admin/projects/{{project}}
+Authorization: Bearer {{admin}}
+Content-Type: application/json
+
+{"status": "suspended"}
+
+### Arsipkan (soft delete) + revoke semua key
+DELETE {{base}}/admin/projects/{{project}}
+Authorization: Bearer {{admin}}
+
+### Ganti seluruh pola model/route yang diizinkan (glob). Route DAN kandidatnya harus cocok.
+PUT {{base}}/admin/projects/{{project}}/allowed-models
+Authorization: Bearer {{admin}}
+Content-Type: application/json
+
+{"patterns": ["smart", "code", "anthropic/*", "openai/*", "local/*"]}
+
+### ---------------------------------------------------------------- keys
+GET {{base}}/admin/projects/{{project}}/keys
+Authorization: Bearer {{admin}}
+
+### Respons memuat "key" SEKALI (tidak disimpan)
+POST {{base}}/admin/projects/{{project}}/keys
+Authorization: Bearer {{admin}}
+Content-Type: application/json
+
+{"name": "dev", "scopes": ["chat", "completions", "images", "models:read", "usage:read"], "rpm_limit": 60}
+
+###
+POST {{base}}/admin/keys/{{key}}/revoke
+Authorization: Bearer {{admin}}
+Content-Type: application/json
+
+{"reason": "bocor di repo"}
+
+###
+POST {{base}}/admin/keys/{{key}}/rotate
+Authorization: Bearer {{admin}}
+
+### ---------------------------------------------------------------- kuota
+GET {{base}}/admin/projects/{{project}}/quotas
+Authorization: Bearer {{admin}}
+
+###
+PUT {{base}}/admin/projects/{{project}}/quotas
+Authorization: Bearer {{admin}}
+Content-Type: application/json
+
+{"quotas": [
+  {"period": "daily", "max_requests": 2000, "max_cost_usd": "5.00"},
+  {"period": "monthly", "max_tokens": 50000000, "max_images": 500}
+]}
+
+### ---------------------------------------------------------------- providers
+GET {{base}}/admin/providers
+Authorization: Bearer {{admin}}
+
+###
+PATCH {{base}}/admin/providers/openai
+Authorization: Bearer {{admin}}
+Content-Type: application/json
+
+{"timeout_seconds": 120, "max_concurrency": 16}
+
+###
+POST {{base}}/admin/providers/openvino/test
+Authorization: Bearer {{admin}}
+
+### ---------------------------------------------------------------- models
+GET {{base}}/admin/models
+Authorization: Bearer {{admin}}
+
+### Tambah model remote (harga per 1 juta token)
+POST {{base}}/admin/models
+Authorization: Bearer {{admin}}
+Content-Type: application/json
+
+{
+  "alias": "openai/gpt-mini",
+  "provider": "openai",
+  "upstream_name": "gpt-5-mini",
+  "model_type": "chat",
+  "tier": "light",
+  "supports_tools": true,
+  "supports_vision": true,
+  "supports_json_mode": true,
+  "input_cost_per_mtok": "0.25",
+  "output_cost_per_mtok": "2.00"
+}
+
+### Model lokal: pin (total pinned per device ≤ budget, else 422), device bukan cpu
+PATCH {{base}}/admin/models/local/qwen2.5-coder-1.5b
+Authorization: Bearer {{admin}}
+Content-Type: application/json
+
+{"is_pinned": true}
+
+### Nonaktifkan (disarankan daripada hapus bila masih dipakai route)
+PATCH {{base}}/admin/models/openai/gpt-mini
+Authorization: Bearer {{admin}}
+Content-Type: application/json
+
+{"is_enabled": false}
+
+### 409 bila masih dipakai route
+DELETE {{base}}/admin/models/openai/gpt-mini
+Authorization: Bearer {{admin}}
+
+### ---------------------------------------------------------------- routes
+GET {{base}}/admin/routes
+Authorization: Bearer {{admin}}
+
+###
+POST {{base}}/admin/routes
+Authorization: Bearer {{admin}}
+Content-Type: application/json
+
+{
+  "alias": "hemat",
+  "description": "murah dulu, lokal sebagai cadangan",
+  "strategy": "priority",
+  "config": {"prefer_loaded": true},
+  "targets": [
+    {"model_alias": "openai/gpt-light", "priority": 1},
+    {"model_alias": "local/qwen2.5-7b", "priority": 2}
+  ]
+}
+
+###
+PATCH {{base}}/admin/routes/hemat
+Authorization: Bearer {{admin}}
+Content-Type: application/json
+
+{"strategy": "round_robin", "targets": [
+  {"model_alias": "openai/gpt-light", "priority": 1, "weight": 3},
+  {"model_alias": "gemini/flash", "priority": 1, "weight": 1}
+]}
+
+###
+DELETE {{base}}/admin/routes/hemat
+Authorization: Bearer {{admin}}
+
+### ---------------------------------------------------------------- penelusuran
+### Filter: project_id, api_key_id, status, endpoint, model, provider, device,
+### caller_task, caller_agent, from, to (ISO); paginasi cursor (limit ≤ 200)
+GET {{base}}/admin/requests?caller_task=research-42&limit=50
+Authorization: Bearer {{admin}}
+
+### Detail request + attempts + payload (bila log_payloads & belum kedaluwarsa)
+GET {{base}}/admin/requests/00000000-0000-0000-0000-000000000000
+Authorization: Bearer {{admin}}
+
+### group_by = day | project | model | provider
+GET {{base}}/admin/usage?from=2026-10-01&to=2026-10-31&group_by=project
+Authorization: Bearer {{admin}}
+
+### Konsistensi requests vs usage_daily (selisih harus 0)
+GET {{base}}/admin/usage/verify?day=2026-10-28
+Authorization: Bearer {{admin}}
+
+###
+GET {{base}}/admin/audit-logs?entity_type=project&limit=50
+Authorization: Bearer {{admin}}
+
+### ---------------------------------------------------------------- runtime lokal
+GET {{base}}/admin/runtime/status
+Authorization: Bearer {{admin}}
+
+### Warmup sebelum jam sibuk (pin=true hanya sampai runtime restart)
+POST {{base}}/admin/runtime/models/local/qwen2.5-7b/load?pin=false
+Authorization: Bearer {{admin}}
+
+### 409 bila pinned / sedang dipakai; force=true menunggu maks 60 detik
+POST {{base}}/admin/runtime/models/local/qwen2.5-7b/unload?force=false
+Authorization: Bearer {{admin}}
+
+###
+GET {{base}}/admin/runtime/events?event=evict&limit=50
+Authorization: Bearer {{admin}}
+
+###
+GET {{base}}/admin/runtime/swap-stats?from=2026-10-28T00:00:00Z
+Authorization: Bearer {{admin}}
+
+### ---------------------------------------------------------------- operasional
+### Reload registry gateway + katalog runtime + kosongkan cache auth/kuota
+POST {{base}}/admin/cache/reload
+Authorization: Bearer {{admin}}
+
+### Retensi manual (TASK-19)
+POST {{base}}/admin/maintenance/retention
+Authorization: Bearer {{admin}}

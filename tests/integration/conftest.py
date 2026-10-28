@@ -70,18 +70,29 @@ async def api(db, tmp_path, monkeypatch):
     data = yaml.safe_load((ROOT / "scripts" / "seed_models.yaml").read_text(encoding="utf-8"))
     async with SessionLocal() as s:
         await _manage()._seed(s, data, update_local=False)
+    # key palsu (bukan pola secret asli) agar provider remote tidak dinonaktifkan saat reload
+    for env in ("OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY"):
+        monkeypatch.setenv(env, "fake-test-key")
     settings = load_settings()
     app = create_app(settings)
-    registry = ProviderRegistry(settings, http=httpx2.AsyncClient())
+    providers: dict[str, FakeProvider] = {}
+
+    def factory(cfg, http, settings_):
+        # instance per provider dipertahankan lintas registry.reload() (admin API), cfg diperbarui
+        inst = providers.get(cfg.code)
+        if inst is None:
+            inst = providers[cfg.code] = FakeProvider(cfg, http, settings_)
+            if cfg.code == "openvino":
+                inst.runtime_meta = GPU_META
+        inst.cfg = cfg
+        return inst
+
+    registry = ProviderRegistry(
+        settings,
+        http=httpx2.AsyncClient(),
+        provider_classes={c: factory for c in ("openai", "anthropic", "gemini", "openvino")},
+    )
     await registry.load()
-    providers = {
-        code: FakeProvider(cfg, registry.http, settings)
-        for code, cfg in registry.provider_configs.items()
-        if code in ("openai", "anthropic", "gemini", "openvino")
-    }
-    providers["openvino"].runtime_meta = GPU_META
-    registry.providers = dict(providers)
-    registry.disabled = {}
     app.state.registry = registry
     app.state.router = Router(registry)
     key = await _project_key(
