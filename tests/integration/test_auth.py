@@ -25,7 +25,8 @@ pytestmark = pytest.mark.integration
 def _app() -> FastAPI:
     app = create_app(load_settings())
 
-    @app.post("/v1/chat/completions")
+    # path uji sendiri: /v1/chat/completions asli sudah ada (TASK-14)
+    @app.post("/_test/chat")
     async def _chat(ctx: AuthContext = Depends(require_scope("chat"))) -> dict[str, str | None]:
         return {"project": ctx.project_slug, "prefix": ctx.key_prefix}
 
@@ -67,7 +68,7 @@ def _bearer(key: str) -> dict[str, str]:
 
 
 async def _chat(client, headers):
-    return await client.post("/v1/chat/completions", headers=headers, json={})
+    return await client.post("/_test/chat", headers=headers, json={})
 
 
 async def test_auth_context_carries_allowed_model_patterns(db):

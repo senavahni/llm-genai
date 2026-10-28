@@ -3,11 +3,12 @@ retryable. Stream: fallback hanya sebelum chunk pertama; setelah chunk pertama k
 error diteruskan apa adanya."""
 
 import asyncio
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 
 from app.schemas.catalog import ModelConfig
 from app.schemas.unified import UnifiedChatRequest, UnifiedChatResponse, UnifiedChunk
 from app.services.context import Outcome, RequestCtx
+from app.services.providers.base import BaseProvider
 from app.services.router_service import Router, aclose_quietly
 from app.utils.errors import GatewayError, InvalidRequestError, UpstreamError
 
@@ -74,40 +75,57 @@ class ChatService:
         )
         return resp, outcome
 
-    async def execute_stream(
+    def execute_stream(
         self,
         ctx: RequestCtx,
         req: UnifiedChatRequest,
         candidates: list[ModelConfig],
         outcome: Outcome,
     ) -> AsyncIterator[UnifiedChunk]:
-        """Async generator: kandidat dipilih saat chunk pertama diminta (controller menunggu
-        chunk pertama sebelum mengirim header), sehingga error sebelum token pertama tetap
-        menjadi status HTTP yang benar."""
+        # generator dikembalikan langsung (bukan dibungkus `async for … yield`): aclose() dari
+        # controller saat client putus harus sampai ke generator inti agar stream upstream
+        # ditutup dan attempt tercatat `cancelled`
         self.validate(req)
-        model, first, iterator, started = await self.router.open_stream(
-            ctx, candidates, lambda p, m: p.chat_stream(m, clamp_max_tokens(ctx, req, m))
+        return stream_with_fallback(
+            self.router,
+            ctx,
+            candidates,
+            lambda p, m: p.chat_stream(m, clamp_max_tokens(ctx, req, m)),
+            outcome,
         )
-        outcome.ttft_ms = ctx.elapsed_ms
-        status, error = "success", None
-        try:
-            if first is not None:
-                absorb_chunk(outcome, first)
-                yield first
-            async for chunk in iterator:
-                absorb_chunk(outcome, chunk)
-                yield chunk
-        except (asyncio.CancelledError, GeneratorExit):
-            status = "cancelled"
-            raise
-        except GatewayError as exc:
-            status, error = "error", exc
-            raise
-        except Exception as exc:
-            status, error = "error", UpstreamError(f"{model.alias}: {type(exc).__name__}: {exc}")
-            raise error from exc
-        finally:
-            await aclose_quietly(iterator)
-            ctx.record(model, status, started, error=error, runtime_meta=outcome.runtime_meta)
-            if status == "success":
-                self.router.breaker.record_success(model.alias)
+
+
+async def stream_with_fallback(
+    router: Router,
+    ctx: RequestCtx,
+    candidates: list[ModelConfig],
+    open_fn: Callable[[BaseProvider, ModelConfig], AsyncIterator[UnifiedChunk]],
+    outcome: Outcome,
+) -> AsyncIterator[UnifiedChunk]:
+    """Async generator: kandidat dipilih saat chunk pertama diminta (controller menunggu chunk
+    pertama sebelum mengirim header), sehingga error sebelum token pertama tetap menjadi status
+    HTTP yang benar. Setelah chunk pertama tidak ada fallback; attempt dicatat saat selesai."""
+    model, first, iterator, started = await router.open_stream(ctx, candidates, open_fn)
+    outcome.ttft_ms = ctx.elapsed_ms
+    status, error = "success", None
+    try:
+        if first is not None:
+            absorb_chunk(outcome, first)
+            yield first
+        async for chunk in iterator:
+            absorb_chunk(outcome, chunk)
+            yield chunk
+    except (asyncio.CancelledError, GeneratorExit):
+        status = "cancelled"
+        raise
+    except GatewayError as exc:
+        status, error = "error", exc
+        raise
+    except Exception as exc:
+        status, error = "error", UpstreamError(f"{model.alias}: {type(exc).__name__}: {exc}")
+        raise error from exc
+    finally:
+        await aclose_quietly(iterator)
+        ctx.record(model, status, started, error=error, runtime_meta=outcome.runtime_meta)
+        if status == "success":
+            router.breaker.record_success(model.alias)

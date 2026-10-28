@@ -106,6 +106,8 @@ class UnifiedImageRequest(_Model):
     steps: int | None = None
     guidance_scale: float | None = None
     seed: int | None = None
+    image: bytes | None = None  # gambar awal → image-to-image
+    strength: float | None = None  # image-to-image: 0 = tidak berubah, 1 = abaikan input
     provider_options: dict[str, Any] = Field(default_factory=dict)
 
 

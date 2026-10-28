@@ -193,15 +193,18 @@ class LocalRuntimeProvider(OpenAIProvider):
                 "steps": req.steps,
                 "guidance_scale": req.guidance_scale,
                 "seed": req.seed,
+                "strength": req.strength,
+                "image": base64.b64encode(req.image).decode() if req.image else None,
                 "response_format": "b64_json",
             }
         )
         body.update(self._passthrough(req.provider_options))
         headers = {**self.default_headers(), **self.request_headers()}
+        path = "edits" if req.image else "generations"
         async with self.semaphore:
             try:
                 resp = await self.http.post(
-                    f"{self.base_url}/images/generations",
+                    f"{self.base_url}/images/{path}",
                     json=body,
                     headers=headers,
                     timeout=self.client_timeout(),

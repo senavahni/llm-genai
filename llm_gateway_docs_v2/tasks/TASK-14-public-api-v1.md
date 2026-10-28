@@ -81,13 +81,17 @@ Route hanya memanggil controller — tidak ada logika bisnis.
 - `X-Caller-Task`, `X-Caller-Agent` (maks 128 char) & `metadata` body → disimpan di `requests.caller_task`, `caller_agent`, `tags`.
 - `metadata` **tidak** diteruskan ke provider kecuali caller menaruhnya di `provider_options`.
 
+> **Catatan 28 Okt 2026:** ditambah `POST /v1/images/edits` (multipart format OpenAI →
+> image-to-image SD lokal; `mask` → 400 `unsupported_parameter`). Rate limit & kuota (TASK-16)
+> belum ada; titik hook ditandai di controller.
+
 ## Deliverables
-- [ ] `app/schemas/openai_compat.py`, `app/schemas/converters.py`
-- [ ] `app/schemas/images.py`
-- [ ] 6 controller (chat, completion, embedding, image, model, usage) + file route v1 (`chat.py`, `completions.py`, `embeddings.py`, `images.py`, `models.py`, `usage.py`)
-- [ ] `app/services/image_service.py`, `app/services/completion_service.py`, `app/services/embedding_service.py`
-- [ ] Test integrasi dengan fake provider via `httpx.AsyncClient(transport=ASGITransport(app))`
-- [ ] Test kompatibilitas memakai SDK `openai` resmi terhadap app yang berjalan (uvicorn di port test)
+- [x] `app/schemas/openai_compat.py`, `app/schemas/converters.py`
+- [x] `app/schemas/images.py` (+ `ImageEditRequest`)
+- [x] 6 controller (chat, completion, embedding, image, model, usage) + file route v1 (`chat.py`, `completions.py`, `embeddings.py`, `images.py`, `models.py`, `usage.py`); helper bersama `controllers/common.py` (SSE setelah chunk pertama, event error SSE, pencatatan error)
+- [x] `app/services/image_service.py`, `app/services/completion_service.py`, `app/services/embedding_service.py`
+- [x] Test integrasi dengan fake provider via `httpx.AsyncClient(transport=ASGITransport(app))` (`tests/integration/test_api_v1.py`)
+- [x] Test kompatibilitas memakai SDK `openai` resmi terhadap app (lewat `httpx2.ASGITransport`, setara uvicorn tanpa port)
 
 ## Acceptance Criteria
 1. Contoh kode PRD §10.2 berjalan tanpa modifikasi selain `base_url` & `api_key`.
