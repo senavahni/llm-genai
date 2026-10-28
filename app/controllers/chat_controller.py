@@ -1,7 +1,14 @@
 from fastapi import BackgroundTasks, Request
 from fastapi.responses import JSONResponse, Response
 
-from app.controllers.common import finish_error, get_router, open_sse, payload_body
+from app.controllers.common import (
+    admit_and_start,
+    estimate_request_tokens,
+    finish_error,
+    get_router,
+    open_sse,
+    payload_body,
+)
 from app.schemas.common import AuthContext
 from app.schemas.converters import chat_capabilities, chat_chunk, chat_response, chat_to_unified
 from app.schemas.openai_compat import ChatCompletionRequest
@@ -24,12 +31,12 @@ async def create_chat_completion(
         metadata=body.metadata,
         body=payload_body(auth.log_payloads, body),
     )
-    # TASK-16: rate limit & kuota diperiksa di sini (sebelum resolve)
     candidates = await router.resolve(body.model, auth, chat_capabilities(unified))
     service = ChatService(router)
     outcome = Outcome()
     stream = service.execute_stream(ctx, unified, candidates, outcome) if body.stream else None
-    await usage_service.start(ctx)
+    est = estimate_request_tokens(body.messages, unified.max_tokens)
+    await admit_and_start(ctx, est)  # rate limit → kuota → catat request
     rid = str(ctx.request_id)
     if stream is not None:
         return await open_sse(

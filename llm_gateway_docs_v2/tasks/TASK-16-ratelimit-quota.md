@@ -39,10 +39,15 @@ Mencegah satu project/key menghabiskan resource atau biaya, tanpa Redis.
 - TPM untuk endpoint gambar: estimasi 0 token; dibatasi oleh RPM dan `max_images`.
 
 ## Deliverables
-- [ ] `ratelimit_service.py` (+ interface backend)
-- [ ] `quota_service.py`
-- [ ] Integrasi di semua controller v1
-- [ ] Unit test dengan waktu di-mock (`time.monotonic` injeksi)
+- [x] `ratelimit_service.py` (+ interface `RateLimiterBackend`, `InMemoryRateLimiter`)
+- [x] `quota_service.py`
+- [x] Integrasi di semua controller v1 (`admit_and_start`: rate limit → kuota → `usage.start`;
+      reservasi dikembalikan bila ditolak; koreksi TPM & penambahan kuota di `usage_service.finish`)
+- [x] Unit test dengan waktu di-mock (`tests/unit/test_ratelimit.py`) + integrasi kuota DB
+      (`tests/integration/test_quota.py`)
+
+Catatan: admission dilakukan setelah resolve model (request ke model yang tidak ada/tidak diizinkan
+tidak memakan jatah). Header `X-RateLimit-*` juga memuat dimensi token (`*-Tokens`).
 
 ## Acceptance Criteria
 1. Key dengan `rpm_limit=5`: request ke-6 dalam 60 detik → 429 + `Retry-After` benar.

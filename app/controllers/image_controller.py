@@ -4,7 +4,7 @@ from fastapi import BackgroundTasks, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import ValidationError
 
-from app.controllers.common import finish_error, get_router, public_base
+from app.controllers.common import admit_and_start, finish_error, get_router, public_base
 from app.schemas.common import AuthContext
 from app.schemas.converters import image_response, image_to_unified
 from app.schemas.images import ImageEditRequest, ImageGenerationRequest
@@ -43,7 +43,8 @@ async def _run(
     )
     need = Capabilities(model_type="image", image_edit=image is not None)
     candidates = await router.resolve(body.model, auth, need)
-    await usage_service.start(ctx)
+    # gambar: estimasi TPM 0, dibatasi RPM & kuota max_images (+ n yang diminta)
+    await admit_and_start(ctx, 0, images=body.n)
     service = ImageService(router)
     try:
         result, outcome = await service.execute(

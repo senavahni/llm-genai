@@ -68,6 +68,8 @@ class RequestCtx:
     attempts: list[Attempt] = field(default_factory=list)
     served_by: ModelConfig | None = None
     warnings: list[str] = field(default_factory=list)
+    reservation: Any = None  # ratelimit_service.Reservation (dikoreksi saat finish)
+    rate_headers: dict[str, str] = field(default_factory=dict)
 
     @classmethod
     def from_request(
@@ -129,7 +131,11 @@ class RequestCtx:
 
     def headers(self) -> dict[str, str]:
         """Header gateway: model/provider/device yang melayani & jumlah attempt."""
-        out = {"X-Request-ID": str(self.request_id), "X-Gateway-Attempts": str(len(self.attempts))}
+        out = {
+            "X-Request-ID": str(self.request_id),
+            "X-Gateway-Attempts": str(len(self.attempts)),
+            **self.rate_headers,
+        }
         last = self.attempts[-1] if self.attempts else None
         if self.served_by is not None:
             out["X-Gateway-Model"] = self.served_by.alias

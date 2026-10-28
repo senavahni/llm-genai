@@ -1,7 +1,14 @@
 from fastapi import BackgroundTasks, Request
 from fastapi.responses import JSONResponse, Response
 
-from app.controllers.common import finish_error, get_router, open_sse, payload_body
+from app.controllers.common import (
+    admit_and_start,
+    estimate_request_tokens,
+    finish_error,
+    get_router,
+    open_sse,
+    payload_body,
+)
 from app.schemas.common import AuthContext
 from app.schemas.converters import (
     completion_capabilities,
@@ -34,7 +41,8 @@ async def create_completion(
     service = CompletionService(router)
     outcome = Outcome()
     stream = service.execute_stream(ctx, unified, candidates, outcome) if body.stream else None
-    await usage_service.start(ctx)
+    est = estimate_request_tokens(unified.prompt + (unified.suffix or ""), unified.max_tokens)
+    await admit_and_start(ctx, est)
     rid = str(ctx.request_id)
     if stream is not None:
         return await open_sse(

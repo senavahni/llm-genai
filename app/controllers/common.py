@@ -12,9 +12,12 @@ from app.core.config import get_settings
 from app.schemas.converters import usage_chunk
 from app.schemas.unified import UnifiedChunk
 from app.services.context import Outcome, RequestCtx
+from app.services.quota_service import quota_service
+from app.services.ratelimit_service import DEFAULT_COMPLETION_ESTIMATE, ratelimit_service
 from app.services.router_service import Router, aclose_quietly
 from app.services.usage_service import usage_service
 from app.utils.errors import GatewayError, ServiceUnavailable
+from app.utils.helper import estimate_tokens
 from app.utils.logger import get_logger
 from app.utils.streaming import SSE_DONE, SSE_HEADERS, StreamOutcome, guarded_stream, sse_event
 
@@ -35,6 +38,22 @@ def payload_body(ctx_auth_log: bool, body: Any) -> dict[str, Any] | None:
     return body.model_dump(mode="json", exclude_none=True)  # type: ignore[no-any-return]
 
 
+async def admit_and_start(ctx: RequestCtx, est_tokens: int, *, images: int = 0) -> None:
+    """Rate limit (RPM/TPM per key) → kuota project → INSERT requests. Kegagalan setelah
+    reservasi rate limit mengembalikan slot & token (request tidak pernah diproses)."""
+    reservation, headers = ratelimit_service.check(ctx.auth, est_tokens)
+    ctx.reservation, ctx.rate_headers = reservation, headers
+    try:
+        await quota_service.check(ctx.auth.project_id, images=images)
+        await usage_service.start(ctx)
+    except BaseException as exc:
+        ratelimit_service.release(reservation)
+        if isinstance(exc, GatewayError):
+            for k, v in headers.items():
+                exc.headers.setdefault(k, v)
+        raise
+
+
 async def finish_error(ctx: RequestCtx, exc: BaseException, outcome: Outcome | None = None) -> None:
     """Catat request gagal/dibatalkan, lalu lampirkan header gateway ke error (attempts dll.)."""
     status = "cancelled" if isinstance(exc, asyncio.CancelledError) else "error"
@@ -45,6 +64,11 @@ async def finish_error(ctx: RequestCtx, exc: BaseException, outcome: Outcome | N
     if isinstance(exc, GatewayError):
         for k, v in ctx.headers().items():
             exc.headers.setdefault(k, v)
+
+
+def estimate_request_tokens(text_or_messages: Any, max_tokens: int | None) -> int:
+    """Estimasi TPM awal = token input (heuristik) + max_tokens (atau 512)."""
+    return estimate_tokens(text_or_messages) + (max_tokens or DEFAULT_COMPLETION_ESTIMATE)
 
 
 def public_base(request: Request) -> str:

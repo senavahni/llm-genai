@@ -24,6 +24,8 @@ from app.models import Request, RequestAttempt, UsageDaily
 from app.models.request import RequestPayload
 from app.schemas.catalog import ModelConfig
 from app.services.context import Outcome, RequestCtx
+from app.services.quota_service import quota_service
+from app.services.ratelimit_service import ratelimit_service
 from app.utils.errors import GatewayError, ServiceUnavailable
 from app.utils.helper import utcnow
 from app.utils.logger import get_logger
@@ -229,6 +231,15 @@ class UsageService:
     ) -> None:
         record = self.build_record(
             ctx, outcome, status=status, error=error, http_status=http_status
+        )
+        # sinkron & sebelum I/O DB: koreksi TPM dengan usage aktual + kuota berjalan
+        tokens = record["prompt_tokens"] + record["completion_tokens"]
+        ratelimit_service.settle(ctx.reservation, tokens)
+        quota_service.record(
+            ctx.auth.project_id,
+            tokens=tokens,
+            images=record["image_count"],
+            cost=Decimal(record["cost_usd"]),
         )
         await self.persist(record)
 
