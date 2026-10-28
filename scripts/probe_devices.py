@@ -1,6 +1,6 @@
 """Identifikasi hardware untuk inferensi lokal → logs/device_probe.json + ringkasan di layar.
 
-"%PY%" scripts\\probe_devices.py
+scripts\\conda-run.bat python scripts\\probe_devices.py
 """
 
 import json
@@ -16,13 +16,10 @@ from runtime.device.probe import detect  # noqa: E402
 def recommendations(probe: dict) -> list[str]:
     rec = []
     gpu, npu, system = probe["gpu"], probe["npu"], probe["system"]
-    name = (gpu.get("name") or "").lower()
-    if gpu["details"].get("nvidia") or "nvidia" in name:
-        rec.append("GPU NVIDIA → LLAMA_GPU_BACKEND=cuda (wheel llama-cpp-python cuXXX)")
-    elif gpu.get("name"):
-        rec.append("GPU non-NVIDIA (Intel/AMD) → LLAMA_GPU_BACKEND=vulkan (wheel .../whl/vulkan)")
+    if "openvino_genai_version" not in system:
+        rec.append("openvino-genai belum terpasang: pip install -r requirements-local.txt")
     if not gpu["available"]:
-        rec.append("llama.cpp belum bisa offload ke GPU: pasang wheel llama-cpp-python GPU")
+        rec.append("GPU tidak terdeteksi OpenVINO: cek driver Intel Graphics")
     if not npu["available"]:
         rec.append("NPU tidak terdeteksi OpenVINO: cek driver Intel NPU (butuh admin/IT)")
     if gpu["details"].get("uma"):

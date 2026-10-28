@@ -145,10 +145,28 @@ async def test_model_busy_is_503_and_errors_unknown_model(runtime_app):
         assert r.status_code == 503 and r.json()["error"]["code"] == "model_busy"
         r = await c.post("/v1/chat/completions", headers=TOKEN, json={"model": "nope"})
         assert r.status_code == 404
+        r = await c.post("/v1/embeddings", headers=TOKEN, json={"model": "chat-fast"})
+        assert r.status_code == 404  # tidak ada embedding lokal
+
+
+async def test_image_generations_and_edits(runtime_app):
+    async with _client(runtime_app) as c:
         r = await c.post(
-            "/v1/embeddings", headers=TOKEN, json={"model": "chat-fast", "input": ["ab", "c"]}
+            "/v1/images/generations",
+            headers=TOKEN,
+            json={"model": "img", "prompt": "kucing", "image": "abaikan", "n": 2},
         )
-        assert r.json()["data"][1]["embedding"] == [1.0, 1.0]
+        assert r.status_code == 200 and len(r.json()["data"]) == 2
+        assert "image" not in FakeBackend.instances[-1].last_image_request  # murni t2i
+        r = await c.post("/v1/images/edits", headers=TOKEN, json={"model": "img", "prompt": "x"})
+        assert r.status_code == 400
+        r = await c.post(
+            "/v1/images/edits",
+            headers=TOKEN,
+            json={"model": "img", "prompt": "malam hari", "image": "iVBORw0K", "strength": 0.5},
+        )
+        assert r.status_code == 200
+        assert FakeBackend.instances[-1].last_image_request["image"] == "iVBORw0K"
 
 
 async def test_manual_load_unload(runtime_app):
@@ -183,9 +201,9 @@ def _local_provider(runtime_app) -> LocalRuntimeProvider:
     http = httpx2.AsyncClient(transport=httpx2.ASGITransport(app=runtime_app))
     cfg = ProviderConfig(
         id=uuid.uuid4(),
-        code="llamacpp",
+        code="openvino",
         kind="local",
-        display_name="llama",
+        display_name="openvino",
         base_url="http://rt/v1",
         api_key_env="RUNTIME_TOKEN",
     )
@@ -196,7 +214,7 @@ def _model(name: str, **kw) -> ModelConfig:
     return ModelConfig(
         id=uuid.uuid4(),
         alias=f"local/{name}",
-        provider_code="llamacpp",
+        provider_code="openvino",
         upstream_name=name,
         model_type=kw.pop("model_type", "chat"),
         device="gpu",
@@ -255,7 +273,7 @@ async def test_provider_health_degraded_when_runtime_down():
     )
     cfg = ProviderConfig(
         id=uuid.uuid4(),
-        code="llamacpp",
+        code="openvino",
         kind="local",
         display_name="l",
         base_url="http://127.0.0.1:1/v1",

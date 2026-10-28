@@ -26,7 +26,8 @@ if TYPE_CHECKING:
 MODEL_TYPES = ("chat", "completion", "embedding", "image")
 MODEL_TIERS = ("light", "heavy")
 MODEL_DEVICES = ("remote", "gpu", "npu", "cpu")
-RUNTIME_BACKENDS = ("llama_cpp_python", "llama_server", "openvino_diffusion", "openvino_embedding")
+# retired = model lama yang dinonaktifkan (llama.cpp/embedding lokal), disimpan demi riwayat
+RUNTIME_BACKENDS = ("openvino_llm", "openvino_vlm", "openvino_diffusion", "retired")
 
 
 class Model(TimestampMixin, Base):
@@ -44,9 +45,7 @@ class Model(TimestampMixin, Base):
     )
 
     id: Mapped[uuid.UUID] = uuid_pk()
-    provider_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("providers.id", ondelete="RESTRICT")
-    )
+    provider_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("providers.id", ondelete="RESTRICT"))
     alias: Mapped[str] = mapped_column(String(128), unique=True)
     upstream_name: Mapped[str] = mapped_column(String(256))
     model_type: Mapped[str] = mapped_column(String(16))

@@ -1,88 +1,134 @@
 # Hardware & keputusan backend (TASK-09)
 
-Hasil `scripts\probe_devices.py` (detail mentah: `logs\device_probe.json`), 27 Oktober 2026.
+## Keputusan 28 Oktober 2026
+
+- Model lokal **hanya Qwen + Stable Diffusion v1.5**. Llama, Phi, DeepSeek, nomic-embed, dan bge-m3
+  dihapus; embedding dilayani provider remote.
+- Semua inferensi lokal lewat **OpenVINO (GenAI) di GPU/NPU**. llama.cpp (`llama-cpp-python`,
+  `llama-server`) dihapus beserta seluruh file GGUF.
+- **Tidak ada inferensi di CPU**: device selalu eksplisit `GPU`/`NPU` (`CPU`/`AUTO` ditolak), dan
+  `cpu_ratio` diukur sebagai bukti.
+
+| Alias | Device | Artefak | vram_mb |
+|---|---|---|---|
+| local/qwen2.5-7b | GPU | INT4 IR siap pakai (`OpenVINO/Qwen2.5-7B-Instruct-int4-ov`) | 4900 |
+| local/qwen2.5-coder-7b | GPU | INT4 IR siap pakai (`OpenVINO/Qwen2.5-Coder-7B-Instruct-int4-ov`) | 5000 |
+| local/qwen2.5-coder-1.5b | **NPU** (pinned) | INT4 sym per-channel, konversi sendiri | 2800 |
+| local/qwen2-vl-2b | GPU | INT4, konversi sendiri | 2100 |
+| local/sd-1.5 | **NPU** (pinned) | INT8, konversi sendiri; text-to-image + image-to-image | 3300 |
+
+## Hasil probe (`scripts\probe_devices.py`, detail: `logs\device_probe.json`)
 
 | Komponen | Hasil |
 |---|---|
-| CPU | Intel Core Ultra 5 225 (Arrow Lake) |
-| GPU | **Intel Graphics (iGPU), terintegrasi / UMA**: tidak ada GPU diskrit. OpenVINO melaporkan `GPU_DEVICE_TOTAL_MEM_SIZE` ≈ 7983 MB, tetapi itu batas alokasi dari RAM sistem bersama, bukan VRAM khusus. |
+| CPU | Intel Core Ultra 5 225 (Arrow Lake), 10 core |
+| GPU | **Intel Graphics (iGPU), terintegrasi / UMA**: tidak ada VRAM khusus. `GPU_DEVICE_TOTAL_MEM_SIZE` ≈ 7983 MB adalah batas alokasi dari RAM sistem bersama. |
 | NPU | Intel AI Boost (arsitektur 3720), driver 1004778, `NPU_DEVICE_TOTAL_MEM_SIZE` = 8192 MB (juga dari RAM sistem bersama) |
-| RAM | **15.740 MB total**; saat probe hanya ~3.570 MB tersedia (aplikasi lain aktif) |
-| OpenVINO | 2026.4.1, device: `CPU`, `GPU`, `NPU` |
-| llama-cpp-python | 0.3.36, wheel **Vulkan**; `llama_supports_gpu_offload()` = `True`; `ggml_vulkan: Intel(R) Graphics | uma: 1 | fp16: 1 | int dot: 1` |
+| RAM | **15.740 MB total** |
+| OpenVINO | 2026.4.1 (`openvino`, `openvino-tokenizers`, `openvino-genai` satu versi) |
 | Python | 3.11.17 (conda env `llm-genai`) |
 
-## Keputusan
+## Memori: GPU & NPU = RAM sistem (UMA)
 
-| Pertanyaan | Jawaban | Dampak |
-|---|---|---|
-| Vendor GPU? | Intel (iGPU) | `LLAMA_GPU_BACKEND=vulkan`, wheel `.../whl/vulkan` (sudah terpasang, ter-pin di `requirements-local.txt`) |
-| NPU Intel terdeteksi OpenVINO? | Ya (`NPU`) | SD v1.5 & bge-m3 bisa di NPU |
-| Device OpenVINO `GPU` tersedia? | Ya (iGPU Intel) | Opsi `component_devices` SD (mis. VAE ke `GPU`) tersedia, tetapi memorinya sama dengan budget GPU llama.cpp |
+Di mesin ini GPU dan NPU **tidak punya memori sendiri**; keduanya mengambil dari RAM 15,7 GB yang
+juga dipakai Windows, PostgreSQL, gateway, dan runtime. Memindahkan model ke GPU/NPU memindahkan
+**komputasi** dari CPU, tetapi bobot model tetap menempati RAM. Karena itu budget GPU+NPU harus
+menyisakan RAM untuk sistem.
 
-## ⚠ Selisih dengan asumsi PRD (§5.2, §7.5)
+Budget yang dipakai (`.env`, `.env.example`):
 
-PRD mengasumsikan **GPU 8 GB + NPU 8 GB** yang terpisah. Di mesin ini GPU dan NPU sama-sama
-memakai **RAM sistem 15,7 GB yang sama**, yang juga dipakai Windows, PostgreSQL, gateway, dan
-runtime. Budget default (`GPU 7200 + NPU 7500 = 14.700 MB`) **tidak muat** di RAM fisik; bila
-terisi penuh, Windows akan paging berat atau driver gagal alokasi.
+| | Total | Reserve | Budget | Isi |
+|---|---|---|---|---|
+| GPU | 6000 | 700 | **5300 MB** | satu model GPU aktif (7B 4900–5000 MB, atau VL 2100 MB), bergantian lewat LRU |
+| NPU | 6500 | 300 | **6200 MB** | SD 3300 + Coder-1.5B 2800 = 6100 MB, keduanya pinned |
 
-Usulan (perlu diputuskan, lalu diubah di `.env`):
+Validasi (`measure_models.py --validate-only`): GPU 5000/5300 OK, NPU 6100/6200 OK, total maks
+**11.100 MB (71% RAM)** → ±4,5 GB tersisa untuk OS & layanan. `GPU_RESERVE_MB=700` menampung
+pool plugin GPU yang tetap tertahan ±670 MB setelah model di-unload.
 
-| Opsi | GPU budget | NPU budget | Konsekuensi |
-|---|---|---|---|
-| A. Satu model 7B + pinned kecil | `GPU_TOTAL_MB=7600`, `GPU_RESERVE_MB=600` → 7000 | `NPU_TOTAL_MB=3700`, `NPU_RESERVE_MB=300` → 3400 | Total ≈ 10,4 GB; sisa ≈ 5 GB untuk OS & layanan. Model 7–8B tetap bisa dipakai bergantian. |
-| B. Tanpa 7B lokal (hemat) | 4500 | 3400 | Route `smart`/`code`/`local` mengandalkan remote atau model 3B; jauh lebih aman. |
-| C. Tetap PRD | 7200 | 7500 | Tidak disarankan di mesin ini. |
+## Pengukuran (`measure_models.py`, `test_sd.py`), cache compile sudah hangat
 
-Nilai `vram_mb` di katalog masih **perkiraan PRD** sampai `measure_models.py` dijalankan untuk
-tiap model (lihat bawah).
+Prompt uji 541 dan ±1.500 token, 128 token keluaran. Memori = counter Windows
+`GPU Process Memory (Dedicated + Shared)` untuk proses pengukur (mencakup NPU).
 
-## Katalog GGUF (terverifikasi `download_models.py --dry-run`)
-
-Semua repo & nama file ada di Hugging Face; total unduhan **27,09 GB**.
-
-| Alias | File | Ukuran |
-|---|---|---|
-| local/qwen2.5-7b | bartowski/Qwen2.5-7B-Instruct-GGUF · `Qwen2.5-7B-Instruct-Q4_K_M.gguf` | 4,68 GB |
-| local/qwen2.5-coder-7b | bartowski/Qwen2.5-Coder-7B-Instruct-GGUF · `Qwen2.5-Coder-7B-Instruct-Q4_K_M.gguf` | 4,68 GB |
-| local/qwen2.5-coder-1.5b | Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF · `qwen2.5-coder-1.5b-instruct-q4_k_m.gguf` | 1,12 GB |
-| local/qwen2-vl-2b | bartowski/Qwen2-VL-2B-Instruct-GGUF · `Qwen2-VL-2B-Instruct-Q4_K_M.gguf` + `mmproj-...-f16.gguf` | 2,32 GB |
-| local/llama-3.2-3b | bartowski/Llama-3.2-3B-Instruct-GGUF · Q4_K_M | 2,02 GB |
-| local/llama-3.1-8b | bartowski/Meta-Llama-3.1-8B-Instruct-GGUF · Q4_K_M | 4,92 GB |
-| local/phi-3.5-mini | bartowski/Phi-3.5-mini-instruct-GGUF · Q4_K_M | 2,39 GB |
-| local/deepseek-r1-qwen-7b | bartowski/DeepSeek-R1-Distill-Qwen-7B-GGUF · Q4_K_M | 4,68 GB |
-| local/nomic-embed | nomic-ai/nomic-embed-text-v1.5-GGUF · F16 | 0,27 GB |
-
-OpenVINO (dikonversi `convert_openvino.py`): `sd15-fp16`, `sd15-int8`, `bge-m3-int8`.
-
-## Pengukuran (`measure_models.py`, `test_npu.py`)
-
-Metode memori iGPU: performance counter Windows `GPU Process Memory (Dedicated + Shared Usage)`
-untuk PID proses pengukur.
-
-| Alias | n_ctx | Load | TTFT (prompt 3.116 token) | Token/s | Puncak | vram_mb | Catatan |
+| Alias | Device | Load | TTFT 541 tok | TTFT ±1,5K tok | Token/s | cpu_ratio | Puncak |
 |---|---|---|---|---|---|---|---|
-| local/qwen2.5-coder-1.5b | 4096 | 0,87 s | 17,2 s | 13,4 | 1.389 MB | **1500** (PRD: 1300) | Vulkan iGPU; memori kembali ~0 setelah unload; sha256 tercatat |
-| 10 model lainnya | | | | | | perkiraan PRD | belum diunduh/diukur |
+| local/qwen2.5-7b | GPU | 5,2 s | 6,1 s | 16,1 s | 7,2–8,3 | ~1,0 | 4.576 MB |
+| local/qwen2.5-coder-7b | GPU | 2,5 s | 5,9 s | 14,4 s | 8,4–8,8 | ~1,0 | 4.690 MB |
+| local/qwen2.5-coder-1.5b | NPU | 3,1 s | 1,7 s | 3,3 s | 19,3–20,5 | **0,03–0,08** | 2.590 MB |
+| local/qwen2-vl-2b | GPU | 3,9 s | 1,6 s | 4,7 s | 24,5–27,5 | ~1,0 | 1.970 MB |
 
-Catatan Coder-1.5B: prefill prompt panjang di iGPU ≈ 180 token/s. Untuk autocomplete FIM
-(prompt pendek ±300–800 token) TTFT diperkirakan ±2–4 detik, jauh di atas target NF11
-(p50 < 300 ms). Ukur ulang dengan prompt FIM realistis di TASK-11/20.
+| SD v1.5 INT8, NPU (text_encoder + UNet + VAE) | Hasil |
+|---|---|
+| Compile pertama / dengan cache | 118 s / **3,3 s** (35×) |
+| text-to-image 512², 20 step | 20,6 s, deterministik (seed sama → PNG identik) |
+| image-to-image 512², strength 0,6 | 13,3 s |
+| cpu_ratio | **0,01–0,02** |
+| Memori perangkat / RSS | 3.094 MB / 5.324 MB (satu set model untuk dua mode) |
+| FP16 (pembanding) | compile 137 s, t2i 21,3 s, memori 3.119 MB, RSS 6.046 MB → **INT8 dipilih** (kecepatan & kualitas setara, RAM lebih kecil) |
 
-Validasi budget dengan nilai saat ini (`measure_models.py --validate-only`):
-- GPU: pinned 1500 + swap terbesar 5800 (perkiraan llama-3.1-8b) = **7300 > 7192 MB → MELEBIHI**
-- NPU: pinned 3200 / 7492 MB → OK
-- UMA: total maks 10.500 MB dari RAM 15.740 MB (67%)
+### Arti `cpu_ratio`
+Waktu CPU proses ÷ waktu dinding selama generate (10 core → nilai maksimal ±10).
+- **NPU ±0,01–0,08**: CPU praktis menganggur.
+- **GPU ±1,0**: satu thread host plugin GPU (submit/sinkronisasi kernel) sibuk penuh, ±10% dari
+  total CPU. Ini overhead driver, bukan inferensi; inferensi CPU akan bernilai ±6–10.
+
+### Dibanding llama.cpp (Vulkan, diukur 27 Okt, sudah dihapus)
+
+| | llama.cpp Vulkan | OpenVINO |
+|---|---|---|
+| Qwen2.5-7B generate | 3,5 token/s | 7,2–8,3 token/s (±2,3×) |
+| Qwen2.5-7B prefill | ±28 token/s | ±90–100 token/s |
+| Coder-1.5B generate | 13,4 token/s (GPU) | 20 token/s (NPU), 27–28 token/s (GPU) |
+| Pemakaian NPU | tidak bisa | bisa |
+
+## Temuan penting
+
+1. **LLM di NPU wajib INT4 simetris per-channel** (`--sym --group-size -1 --ratio 1.0`). IR
+   `OpenVINO/*-int4-ov` (asimetris, group 128) dan hasil konversi default ditolak compiler NPU:
+   `StopLocationVerifierPass ... Found 142 duplicated names` (dicoba pada Coder-1.5B & Qwen2-VL).
+   Konversi 7B sendiri butuh ±15 GB RAM (tidak mungkin di mesin ini), jadi model 7B di GPU.
+2. **Compile pertama memakan ±2× memori**: Qwen2.5-7B di GPU puncak 8.023 MB dan 28 s tanpa cache,
+   4.391 MB dan 5 s dengan cache. Cache harus dihangatkan sekali setelah instalasi (smoke test /
+   measure sudah melakukannya); runtime sebaiknya tidak cold-compile 7B saat model lain dimuat.
+   Cache untuk kelima model ±12,5 GB di disk (`local_models/ov_cache`; blob GPU ikut menyimpan
+   bobot). Bila cache dihapus, jalankan ulang `smoke_local.py` + `test_sd.py` (±5 menit).
+3. **SD lewat OpenVINO GenAI berjalan penuh di NPU.** Jalur lama `optimum` (`OVStableDiffusionPipeline`)
+   macet > 60 menit saat compile UNet. `Text2ImagePipeline(image2image_pipe)` berbagi model, sehingga
+   memori turun dari 4,5 GB → 3,1 GB (perangkat) dan 10 GB → 5,3 GB (RSS).
+4. **NPU dipakai bersama SD dan Coder-1.5B.** Request autocomplete bisa menunggu selama SD
+   generate (±20 s). Bila latensi autocomplete lebih penting, Coder-1.5B bisa dipindah ke GPU
+   (27 token/s, IR GPU harus diunduh ulang) dengan konsekuensi berbagi GPU dengan model 7B.
+5. **FIM Coder-1.5B di NPU: TTFT 1,7 s untuk prompt 541 token**, jauh dari target NF11 (p50 < 300 ms).
+   Prompt FIM perlu dibatasi ±128–256 token; diukur ulang di TASK-11.
+6. **Tool calling & JSON**: `Tokenizer.apply_chat_template(..., tools=[...])` menyisipkan definisi
+   tools lewat template Qwen native; output `<tool_call>` di-parse `runtime/backends/tool_parsers.py`.
+   `StructuredOutputConfig(json_schema=...)` menghasilkan JSON valid. Keduanya lolos smoke test.
+7. **Konversi Qwen2-VL** butuh transformers ≤ 5.0 (batas optimum-intel 2.2); `convert_openvino.py`
+   memasangnya terpisah di `local_models/convert_deps/` (hanya untuk proses konversi).
+8. **Unduhan**: jalur `huggingface_hub`/Xet macet di 0 byte pada jaringan ini; semua unduhan lewat
+   `scripts/_hfhttp.py` (HTTPS, resume, retry). `conda-run.bat` menyetel `HF_HUB_DISABLE_XET=1`.
+
+## Smoke test (`docs/smoke/`)
+
+| Alias | Device | Uji | Hasil |
+|---|---|---|---|
+| local/qwen2.5-7b | GPU | tool call `get_weather(Bandung)` + JSON schema | OK |
+| local/qwen2.5-coder-7b | GPU | `slugify` + unit test pytest | OK |
+| local/qwen2.5-coder-1.5b | NPU | FIM `is_prime`, dieksekusi | OK |
+| local/qwen2-vl-2b | GPU | gambar sintetis (kotak merah + "GATEWAY 42") | OK |
+| local/sd-1.5 | NPU | text-to-image + image-to-image (`sd15_t2i.png`, `sd15_i2i.png`) | OK |
 
 ## Cara mengulang
 
 ```bat
-call scripts\env.bat
-"%PY%" scripts\probe_devices.py
-"%PY%" scripts\download_models.py --write-yaml          :: ~27 GB
-"%PY%" scripts\convert_openvino.py                      :: SD fp16/int8 + bge-m3 int8
-"%PY%" scripts\test_npu.py                              :: jalankan 2x (cek cache compile)
-"%PY%" scripts\measure_models.py --update-yaml          :: satu per satu, tutup aplikasi lain
-"%PY%" scripts\manage.py seed --update-local            :: sinkron vram_mb/sha256/path ke DB
+scripts\conda-run.bat python scripts\probe_devices.py
+scripts\conda-run.bat python scripts\download_models.py --write-yaml     :: Qwen2.5 7B (IR siap pakai)
+scripts\conda-run.bat python scripts\convert_openvino.py --write-yaml    :: SD INT8, Qwen2-VL, Coder-1.5B NPU
+scripts\conda-run.bat python scripts\test_sd.py                          :: 2× (cek cache)
+scripts\conda-run.bat python scripts\smoke_local.py                      :: juga menghangatkan cache
+scripts\conda-run.bat python scripts\measure_models.py --update-yaml     :: setelah cache hangat
+scripts\conda-run.bat alembic upgrade head
+scripts\conda-run.bat python scripts\manage.py seed --update-local
 ```
+Jalankan pengukuran satu model per proses dan tutup aplikasi berat lain.

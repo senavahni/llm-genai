@@ -1,0 +1,26 @@
+{
+  "local/qwen2.5-coder-1.5b": {
+    "test": "fim",
+    "device": "NPU",
+    "ok": true,
+    "seconds": 15.5
+  },
+  "local/qwen2-vl-2b": {
+    "test": "vision",
+    "device": "GPU",
+    "ok": true,
+    "seconds": 12.3
+  },
+  "local/qwen2.5-7b": {
+    "test": "tool_call",
+    "device": "GPU",
+    "ok": true,
+    "seconds": 32.3
+  },
+  "local/qwen2.5-coder-7b": {
+    "test": "code_chat",
+    "device": "GPU",
+    "ok": true,
+    "seconds": 57.9
+  }
+}

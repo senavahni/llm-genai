@@ -104,10 +104,10 @@ def test_runtime_component_files(log_dir):
     setup_logging(
         settings.model_copy(update={"log_level": "DEBUG"}), component="runtime", console=False
     )
-    get_logger("runtime.native").debug("llama_cpp_verbose_line")
+    get_logger("runtime.native").debug("openvino_native_line")
     get_logger("runtime").error("device_error")
     shutdown_logging()
-    assert "llama_cpp_verbose_line" in (tmp_path / "runtime.log").read_text(encoding="utf-8")
+    assert "openvino_native_line" in (tmp_path / "runtime.log").read_text(encoding="utf-8")
     assert "device_error" in (tmp_path / "runtime-error.log").read_text(encoding="utf-8")
     assert not (tmp_path / "app.log").exists()
     assert not (tmp_path / "access.log").exists()

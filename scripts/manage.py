@@ -9,6 +9,7 @@ python scripts\\manage.py create-key --project agent-a --name dev [--scopes chat
 import argparse
 import asyncio
 import sys
+import uuid
 from datetime import timedelta
 from pathlib import Path
 from typing import Any
@@ -38,8 +39,44 @@ from app.utils.helper import utcnow  # noqa: E402
 
 SEED_FILE = ROOT / "scripts" / "seed_models.yaml"
 # kunci yaml yang bukan kolom tabel models
-_MODEL_NON_COLUMNS = {"provider", "hf_repo", "filename"}
-_LOCAL_UPDATE_FIELDS = ("vram_mb", "artifact_sha256", "artifact_path", "config")
+_MODEL_NON_COLUMNS = {"provider", "hf_repo", "convert"}
+_LOCAL_UPDATE_FIELDS = (
+    "provider_id",
+    "upstream_name",
+    "model_type",
+    "tier",
+    "device",
+    "runtime_backend",
+    "artifact_path",
+    "artifact_sha256",
+    "vram_mb",
+    "is_pinned",
+    "is_enabled",
+    "supports_streaming",
+    "supports_tools",
+    "supports_vision",
+    "supports_json_mode",
+    "supports_fim",
+    "context_window",
+    "max_output_tokens",
+    "embedding_dimensions",
+    "license",
+    "config",
+)
+# default kolom bila kunci tidak ada di yaml (agar sinkron = isi yaml, bukan sisa nilai lama)
+_LOCAL_DEFAULTS: dict[str, Any] = {
+    "is_pinned": False,
+    "is_enabled": True,
+    "supports_streaming": True,
+    "supports_tools": False,
+    "supports_vision": False,
+    "supports_json_mode": False,
+    "supports_fim": False,
+    "artifact_sha256": None,
+    "embedding_dimensions": None,
+    "context_window": None,
+    "max_output_tokens": None,
+}
 
 
 def _model_values(item: dict[str, Any], provider_ids: dict[str, Any]) -> dict[str, Any]:
@@ -47,7 +84,7 @@ def _model_values(item: dict[str, Any], provider_ids: dict[str, Any]) -> dict[st
     values["provider_id"] = provider_ids[item["provider"]]
     config = dict(values.get("config") or {})
     if item.get("hf_repo"):
-        config["source"] = {"hf_repo": item["hf_repo"], "filename": item.get("filename")}
+        config["source"] = {"hf_repo": item["hf_repo"], "convert": bool(item.get("convert"))}
     values["config"] = config
     return values
 
@@ -116,34 +153,109 @@ async def _seed(session: AsyncSession, data: dict[str, Any], update_local: bool)
 async def _update_local(
     session: AsyncSession, data: dict[str, Any], provider_ids: dict[str, Any]
 ) -> None:
-    """Sinkronkan vram_mb/artifact_sha256/config model lokal dari yaml, catat di audit_logs."""
+    """Samakan model lokal di DB dengan yaml (semua kolom katalog), nonaktifkan model lokal yang
+    sudah tidak ada di yaml. Setiap perubahan dicatat di audit_logs."""
     changed = 0
+    in_yaml: set[str] = set()
     for item in data["models"]:
         if item.get("device", "remote") == "remote":
             continue
-        desired = _model_values(item, provider_ids)
+        in_yaml.add(item["alias"])
+        desired = {**_LOCAL_DEFAULTS, **_model_values(item, provider_ids)}
         model = (
             await session.execute(select(Model).where(Model.alias == item["alias"]))
         ).scalar_one()
         before = {f: getattr(model, f) for f in _LOCAL_UPDATE_FIELDS}
         after = {f: desired.get(f, before[f]) for f in _LOCAL_UPDATE_FIELDS}
-        if before == after:
-            continue
-        for f, v in after.items():
-            setattr(model, f, v)
-        session.add(
-            AuditLog(
-                actor_key_id=None,  # actor = system
-                action="model.update_local",
-                entity_type="model",
-                entity_id=str(model.id),
-                before={"alias": model.alias, **before},
-                after={"alias": model.alias, **after},
+        if _audit_change(session, model, before, after, "model.update_local"):
+            changed += 1
+    stale = (
+        (
+            await session.execute(
+                select(Model).where(Model.device != "remote", Model.is_enabled.is_(True))
             )
         )
-        changed += 1
-        print(f"  updated {model.alias}")
+        .scalars()
+        .all()
+    )
+    for model in stale:
+        if model.alias not in in_yaml:
+            before = {"is_enabled": True}
+            if _audit_change(session, model, before, {"is_enabled": False}, "model.disable_local"):
+                changed += 1
     print(f"--update-local: {changed} model diperbarui")
+    await session.flush()
+    await _prune_disabled_local_targets(session)
+
+
+async def _prune_disabled_local_targets(session: AsyncSession) -> None:
+    """Hapus target route yang menunjuk model lokal nonaktif (katalog lama), dengan audit."""
+    rows = (
+        await session.execute(
+            select(ModelRouteTarget, ModelRoute.alias, Model.alias)
+            .join(ModelRoute, ModelRoute.id == ModelRouteTarget.route_id)
+            .join(Model, Model.id == ModelRouteTarget.model_id)
+            .where(Model.device != "remote", Model.is_enabled.is_(False))
+        )
+    ).all()
+    for target, route_alias, model_alias in rows:
+        await session.delete(target)
+        session.add(
+            AuditLog(
+                actor_key_id=None,
+                action="route.remove_target",
+                entity_type="model_route",
+                entity_id=str(target.route_id),
+                before={"route": route_alias, "model": model_alias},
+                after=None,
+            )
+        )
+        print(f"  route.remove_target: {route_alias} → {model_alias}")
+    await session.flush()
+    empty = (
+        (
+            await session.execute(
+                select(ModelRoute.alias).where(
+                    ~select(ModelRouteTarget.route_id)
+                    .where(ModelRouteTarget.route_id == ModelRoute.id)
+                    .exists()
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    for alias in empty:
+        print(f"  ! route '{alias}' tidak punya target lagi (hapus/ubah lewat Admin API)")
+
+
+def _audit_change(
+    session: AsyncSession,
+    model: Model,
+    before: dict[str, Any],
+    after: dict[str, Any],
+    action: str,
+) -> bool:
+    if before == after:
+        return False
+    for f, v in after.items():
+        setattr(model, f, v)
+    session.add(
+        AuditLog(
+            actor_key_id=None,  # actor = system
+            action=action,
+            entity_type="model",
+            entity_id=str(model.id),
+            before={"alias": model.alias, **_jsonable(before)},
+            after={"alias": model.alias, **_jsonable(after)},
+        )
+    )
+    print(f"  {action}: {model.alias}")
+    return True
+
+
+def _jsonable(values: dict[str, Any]) -> dict[str, Any]:
+    return {k: str(v) if isinstance(v, uuid.UUID) else v for k, v in values.items()}
 
 
 async def cmd_seed(args: argparse.Namespace) -> None:

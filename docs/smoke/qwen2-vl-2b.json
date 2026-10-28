@@ -1,0 +1,8 @@
+{
+  "alias": "local/qwen2-vl-2b",
+  "device": "GPU",
+  "test": "vision",
+  "ok": true,
+  "seconds": 12.3,
+  "content": "the image shows a red rectangle with the text \"gateway 42\" written on it."
+}

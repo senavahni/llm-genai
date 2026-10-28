@@ -24,12 +24,6 @@ class LoadResult:
 
 
 @dataclass(frozen=True, slots=True)
-class EmbedResult:
-    vectors: list[list[float]]
-    prompt_tokens: int = 0
-
-
-@dataclass(frozen=True, slots=True)
 class ImageResult:
     png_bytes: bytes
     width: int
@@ -40,7 +34,7 @@ class ImageResult:
 
 
 class LocalBackend(ABC):
-    kind: ClassVar[str]  # llama_cpp_python | llama_server | openvino_diffusion | openvino_embedding
+    kind: ClassVar[str]  # openvino_llm | openvino_vlm | openvino_diffusion
 
     def __init__(self, spec: LocalModelSpec) -> None:
         self.spec = spec
@@ -82,12 +76,10 @@ class LocalBackend(ABC):
     ) -> AsyncIterator[dict[str, Any]]:
         raise CapabilityNotSupported(f"{self.spec.alias} tidak mendukung completions")
 
-    async def embed(self, inputs: list[str], **kwargs: Any) -> EmbedResult:
-        raise CapabilityNotSupported(f"{self.spec.alias} tidak mendukung embeddings")
-
     async def generate_images(
         self, req: dict[str, Any], cancel: asyncio.Event
     ) -> list[ImageResult]:
+        """text-to-image; image-to-image bila `req` berisi `image` (base64) + `strength`."""
         raise CapabilityNotSupported(f"{self.spec.alias} tidak mendukung image generation")
 
 

@@ -7,7 +7,7 @@ router = APIRouter(prefix="/v1", tags=["inference"], dependencies=[Depends(requi
 
 router.add_api_route("/chat/completions", c.chat_completions, methods=["POST"], response_model=None)
 router.add_api_route("/completions", c.completions, methods=["POST"], response_model=None)
-router.add_api_route("/embeddings", c.embeddings, methods=["POST"], response_model=None)
 router.add_api_route(
     "/images/generations", c.image_generations, methods=["POST"], response_model=None
 )
+router.add_api_route("/images/edits", c.image_edits, methods=["POST"], response_model=None)

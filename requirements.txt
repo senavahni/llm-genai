@@ -1,5 +1,5 @@
 # Dependency langsung gateway (versi minimum). Versi persis: requirements.lock.txt
-# Dependency akselerator lokal (llama-cpp-python, openvino, ...) ada di requirements-local.txt (TASK-09).
+# Dependency akselerator lokal (openvino, openvino-genai, ...) ada di requirements-local.txt (TASK-09).
 fastapi>=0.115
 uvicorn[standard]>=0.30
 pydantic>=2.7

@@ -1,4 +1,4 @@
-﻿accelerate==1.15.0
+accelerate==1.15.0
 alembic==1.20.1
 annotated-doc==0.0.5
 annotated-types==0.8.0
@@ -38,7 +38,6 @@ Jinja2==3.1.6
 jiter==0.17.0
 joblib==1.6.0
 librt==0.16.0
-llama_cpp_python==0.3.36
 Mako==1.4.3
 markdown-it-py==4.2.0
 MarkupSafe==3.0.4
@@ -54,6 +53,7 @@ numpy==2.4.6
 openai==3.37.0
 opentelemetry-api==1.45.1
 openvino==2026.4.1
+openvino-genai==2026.4.1.0
 openvino-telemetry==2025.2.0
 openvino-tokenizers==2026.4.1.0
 optimum==2.3.0

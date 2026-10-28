@@ -83,13 +83,22 @@ async def completions(request: Request) -> JSONResponse | StreamingResponse:
     return await _generate(request, "completion")
 
 
-async def embeddings(request: Request) -> JSONResponse:
-    body = await _body(request)
-    return JSONResponse(await _state(request).service.embeddings(body, _request_id(request)))
-
-
 async def image_generations(request: Request) -> JSONResponse:
     body = await _body(request)
+    body.pop("image", None)  # text-to-image murni; image-to-image lewat /images/edits
+    return await _images(request, body)
+
+
+async def image_edits(request: Request) -> JSONResponse:
+    """image-to-image (prompt + gambar awal base64). Body JSON, bukan multipart: gateway
+    (TASK-14) yang menerjemahkan multipart OpenAI `/v1/images/edits` ke format ini."""
+    body = await _body(request)
+    if not isinstance(body.get("image"), str) or not body["image"]:
+        raise InvalidRequestError("Field 'image' (base64) wajib untuk /images/edits", param="image")
+    return await _images(request, body)
+
+
+async def _images(request: Request, body: dict[str, Any]) -> JSONResponse:
     cancel = asyncio.Event()
     async with _watch_disconnect(request, cancel):
         result = await _state(request).service.images(body, _request_id(request), cancel)

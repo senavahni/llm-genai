@@ -1,40 +1,100 @@
 # Katalog seed (PRD §7.4, §9.4, §9.5). Single source of truth runtime = tabel `models`;
 # file ini hanya sumber seed awal / `manage.py seed --update-local`.
 #
-# - vram_mb lokal = PERKIRAAN PRD. Ganti dengan hasil ukur TASK-09, lalu `manage.py seed --update-local`.
-# - hf_repo / filename lokal: VERIFIKASI saat TASK-09 (disimpan ke config.source untuk download_models.py).
+# Model lokal: hanya keluarga Qwen + Stable Diffusion v1.5, semuanya OpenVINO IR di GPU/NPU
+# (keputusan 28 Okt 2026, lihat docs/hardware.md). Tidak ada inferensi di CPU.
+# - hf_repo: repo IR siap pakai (diunduh scripts/download_models.py), atau repo sumber bila
+#   `convert: true` (dibuat scripts/convert_openvino.py).
+# - vram_mb: hasil ukur scripts/measure_models.py → `manage.py seed --update-local`.
 # - Nama model remote & harga: cek dokumentasi provider saat implementasi; harga 0 = belum diisi.
 
 providers:
   - {code: openai, kind: remote, display_name: OpenAI, base_url: "https://api.openai.com/v1", api_key_env: OPENAI_API_KEY}
   - {code: anthropic, kind: remote, display_name: Anthropic, base_url: "https://api.anthropic.com", api_key_env: ANTHROPIC_API_KEY}
   - {code: gemini, kind: remote, display_name: Google Gemini, base_url: "https://generativelanguage.googleapis.com", api_key_env: GEMINI_API_KEY}
-  # base_url lokal diisi dari RUNTIME_URL saat seed
-  - {code: llamacpp, kind: local, display_name: "llama.cpp (Local Runtime)", base_url: "${RUNTIME_URL}", api_key_env: RUNTIME_TOKEN, timeout_seconds: 300, max_concurrency: 4}
-  - {code: openvino, kind: local, display_name: "OpenVINO (Local Runtime)", base_url: "${RUNTIME_URL}", api_key_env: RUNTIME_TOKEN, timeout_seconds: 300, max_concurrency: 2}
+  # base_url lokal diisi dari RUNTIME_URL saat seed. Semua model lokal lewat OpenVINO (GPU/NPU).
+  - {code: openvino, kind: local, display_name: "OpenVINO (Local Runtime)", base_url: "${RUNTIME_URL}", api_key_env: RUNTIME_TOKEN, timeout_seconds: 300, max_concurrency: 4}
 
 models:
-  # ===================== A. Model lokal wajib =====================
+  # ===================== Model lokal (OpenVINO) =====================
   - alias: local/qwen2.5-7b
-    provider: llamacpp
+    provider: openvino
     upstream_name: qwen2.5-7b
     model_type: chat
     tier: heavy
     device: gpu
-    runtime_backend: llama_cpp_python
-    hf_repo: bartowski/Qwen2.5-7B-Instruct-GGUF
-    filename: Qwen2.5-7B-Instruct-Q4_K_M.gguf
-    artifact_path: local_models/gguf/Qwen2.5-7B-Instruct-Q4_K_M.gguf
-    vram_mb: 5400
+    runtime_backend: openvino_llm
+    hf_repo: OpenVINO/Qwen2.5-7B-Instruct-int4-ov
+    artifact_path: local_models/openvino/qwen2.5-7b-int4
+    vram_mb: 4900
+    artifact_sha256: a1311f69613dc126ef7ac9010e1634d286798822cbc5113c08c9e68d7ee64fae
     is_pinned: false
     license: apache-2.0
     supports_tools: true
     supports_json_mode: true
     context_window: 8192
     max_output_tokens: 4096
-    config: {n_ctx: 8192, n_gpu_layers: -1, n_batch: 512, flash_attn: true, type_k: q8_0, type_v: q8_0,
-             chat_format: null, tool_chat_format: chatml-function-calling, replicas: 1,
-             auto_reduce_ctx: true, ctx_fallback: [8192, 4096]}
+    config: {device: GPU, tool_parser: hermes, cache_dir: local_models/ov_cache}
+
+  - alias: local/qwen2.5-coder-7b
+    provider: openvino
+    upstream_name: qwen2.5-coder-7b
+    model_type: chat
+    tier: heavy
+    device: gpu
+    runtime_backend: openvino_llm
+    hf_repo: OpenVINO/Qwen2.5-Coder-7B-Instruct-int4-ov
+    artifact_path: local_models/openvino/qwen2.5-coder-7b-int4
+    vram_mb: 5000
+    artifact_sha256: 72598a6ccbb787251e1e550750cad6162aeff7fa3c3d3905c9326ed7a1fc8fa0
+    is_pinned: false
+    license: apache-2.0
+    supports_tools: true
+    supports_json_mode: true
+    context_window: 8192
+    max_output_tokens: 4096
+    config: {device: GPU, tool_parser: hermes, cache_dir: local_models/ov_cache}
+
+  - alias: local/qwen2.5-coder-1.5b
+    provider: openvino
+    upstream_name: qwen2.5-coder-1.5b
+    model_type: completion
+    tier: light
+    device: npu
+    runtime_backend: openvino_llm
+    hf_repo: Qwen/Qwen2.5-Coder-1.5B-Instruct
+    convert: true
+    artifact_path: local_models/openvino/qwen2.5-coder-1.5b-int4-npu
+    vram_mb: 2800
+    artifact_sha256: 91b923db2ca875709d6c4595c23b5862a752631dae94b484ecfdfa93d4fe8299
+    is_pinned: true
+    supports_fim: true
+    license: apache-2.0
+    context_window: 4096
+    max_output_tokens: 1024
+    config: {device: NPU, max_prompt_len: 2048, min_response_len: 256,
+             fim_template: "<|fim_prefix|>{prefix}<|fim_suffix|>{suffix}<|fim_middle|>",
+             fim_stop: ["<|endoftext|>", "<|fim_pad|>", "<|file_sep|>"],
+             cache_dir: local_models/ov_cache}
+
+  - alias: local/qwen2-vl-2b
+    provider: openvino
+    upstream_name: qwen2-vl-2b
+    model_type: chat
+    tier: light
+    device: gpu
+    runtime_backend: openvino_vlm
+    hf_repo: Qwen/Qwen2-VL-2B-Instruct
+    convert: true
+    artifact_path: local_models/openvino/qwen2-vl-2b-int4
+    vram_mb: 2100
+    artifact_sha256: cb743cc45ccc7e5c3ec764d20fe01c34d3e49b97ae0019b3c26f0987e9b07ff9
+    is_pinned: false
+    license: apache-2.0
+    supports_vision: true
+    context_window: 4096
+    max_output_tokens: 2048
+    config: {device: GPU, max_image_px: 1280, max_images: 4, cache_dir: local_models/ov_cache}
 
   - alias: local/sd-1.5
     provider: openvino
@@ -44,193 +104,16 @@ models:
     device: npu
     runtime_backend: openvino_diffusion
     hf_repo: stable-diffusion-v1-5/stable-diffusion-v1-5
-    artifact_path: local_models/openvino/sd15-fp16
-    vram_mb: 2500
+    convert: true
+    artifact_path: local_models/openvino/sd15-int8
+    vram_mb: 3300
+    artifact_sha256: 0003fe05c9352f11c680edac536367fa4a7b5bbdb2d05de35c45cb10fe631a6b
     is_pinned: true
     license: creativeml-openrail-m
     supports_streaming: false
-    config: {device: NPU, component_devices: {text_encoder: NPU, unet: NPU, vae_decoder: NPU},
-             allowed_sizes: ["512x512"], default_steps: 25, max_steps: 50,
-             scheduler: EulerDiscreteScheduler, safety_checker: false, cache_dir: local_models/ov_cache}
-
-  - alias: local/qwen2.5-coder-7b
-    provider: llamacpp
-    upstream_name: qwen2.5-coder-7b
-    model_type: chat
-    tier: heavy
-    device: gpu
-    runtime_backend: llama_cpp_python
-    hf_repo: bartowski/Qwen2.5-Coder-7B-Instruct-GGUF
-    filename: Qwen2.5-Coder-7B-Instruct-Q4_K_M.gguf
-    artifact_path: local_models/gguf/Qwen2.5-Coder-7B-Instruct-Q4_K_M.gguf
-    vram_mb: 5600
-    is_pinned: false
-    license: apache-2.0
-    supports_tools: true
-    supports_json_mode: true
-    context_window: 12288
-    max_output_tokens: 4096
-    config: {n_ctx: 12288, n_gpu_layers: -1, n_batch: 512, flash_attn: true, type_k: q8_0, type_v: q8_0,
-             chat_format: null, tool_chat_format: chatml-function-calling, replicas: 1,
-             auto_reduce_ctx: true, ctx_fallback: [12288, 8192, 4096]}
-
-  - alias: local/qwen2.5-coder-1.5b
-    provider: llamacpp
-    upstream_name: qwen2.5-coder-1.5b
-    model_type: completion
-    tier: light
-    device: gpu
-    runtime_backend: llama_cpp_python
-    hf_repo: Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF
-    filename: qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
-    artifact_path: local_models/gguf/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
-    vram_mb: 1500
-    artifact_sha256: cc324af070c2ecbfd324a30884d2f951a7ff756aba85cb811a6ec436933bb046
-    is_pinned: true
-    supports_fim: true
-    license: apache-2.0
-    context_window: 4096
-    max_output_tokens: 1024
-    config: {n_ctx: 4096, n_gpu_layers: -1,
-             fim_template: "<|fim_prefix|>{prefix}<|fim_suffix|>{suffix}<|fim_middle|>",
-             fim_stop: ["<|endoftext|>", "<|fim_pad|>", "<|file_sep|>"], replicas: 1}
-
-  - alias: local/qwen2-vl-2b
-    provider: llamacpp
-    upstream_name: qwen2-vl-2b
-    model_type: chat
-    tier: light
-    device: gpu
-    runtime_backend: llama_cpp_python
-    hf_repo: bartowski/Qwen2-VL-2B-Instruct-GGUF
-    filename: Qwen2-VL-2B-Instruct-Q4_K_M.gguf
-    artifact_path: local_models/gguf/Qwen2-VL-2B-Instruct-Q4_K_M.gguf
-    vram_mb: 2400
-    is_pinned: false
-    license: apache-2.0
-    supports_vision: true
-    context_window: 4096
-    max_output_tokens: 2048
-    config: {n_ctx: 4096, n_gpu_layers: -1,
-             mmproj_path: local_models/gguf/mmproj-Qwen2-VL-2B-Instruct-f16.gguf,
-             mmproj_filename: mmproj-Qwen2-VL-2B-Instruct-f16.gguf,
-             chat_handler: mtmd, fallback_backend: llama_server, max_image_px: 1280}
-
-  # ===================== B. Model tambahan llama.cpp =====================
-  - alias: local/llama-3.2-3b
-    provider: llamacpp
-    upstream_name: llama-3.2-3b
-    model_type: chat
-    tier: light
-    device: gpu
-    runtime_backend: llama_cpp_python
-    hf_repo: bartowski/Llama-3.2-3B-Instruct-GGUF
-    filename: Llama-3.2-3B-Instruct-Q4_K_M.gguf
-    artifact_path: local_models/gguf/Llama-3.2-3B-Instruct-Q4_K_M.gguf
-    vram_mb: 2800
-    is_pinned: false
-    license: llama3.2
-    supports_tools: true
-    supports_json_mode: true
-    context_window: 8192
-    max_output_tokens: 4096
-    config: {n_ctx: 8192, n_gpu_layers: -1, n_batch: 512, flash_attn: true, type_k: q8_0, type_v: q8_0,
-             chat_format: null, tool_chat_format: chatml-function-calling, replicas: 1,
-             auto_reduce_ctx: true, ctx_fallback: [8192, 4096]}
-
-  - alias: local/llama-3.1-8b
-    provider: llamacpp
-    upstream_name: llama-3.1-8b
-    model_type: chat
-    tier: heavy
-    device: gpu
-    runtime_backend: llama_cpp_python
-    hf_repo: bartowski/Meta-Llama-3.1-8B-Instruct-GGUF
-    filename: Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf
-    artifact_path: local_models/gguf/Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf
-    vram_mb: 5800
-    is_pinned: false
-    license: llama3.1
-    supports_tools: true
-    supports_json_mode: true
-    context_window: 8192
-    max_output_tokens: 4096
-    config: {n_ctx: 8192, n_gpu_layers: -1, n_batch: 512, flash_attn: true, type_k: q8_0, type_v: q8_0,
-             chat_format: null, tool_chat_format: chatml-function-calling, replicas: 1,
-             auto_reduce_ctx: true, ctx_fallback: [8192, 4096]}
-
-  - alias: local/phi-3.5-mini
-    provider: llamacpp
-    upstream_name: phi-3.5-mini
-    model_type: chat
-    tier: light
-    device: gpu
-    runtime_backend: llama_cpp_python
-    hf_repo: bartowski/Phi-3.5-mini-instruct-GGUF
-    filename: Phi-3.5-mini-instruct-Q4_K_M.gguf
-    artifact_path: local_models/gguf/Phi-3.5-mini-instruct-Q4_K_M.gguf
-    vram_mb: 3400
-    is_pinned: false
-    license: mit
-    context_window: 4096
-    max_output_tokens: 2048
-    config: {n_ctx: 4096, n_gpu_layers: -1, n_batch: 512, flash_attn: true, type_k: q8_0, type_v: q8_0,
-             chat_format: null, replicas: 1}
-
-  - alias: local/deepseek-r1-qwen-7b
-    provider: llamacpp
-    upstream_name: deepseek-r1-qwen-7b
-    model_type: chat
-    tier: heavy
-    device: gpu
-    runtime_backend: llama_cpp_python
-    hf_repo: bartowski/DeepSeek-R1-Distill-Qwen-7B-GGUF
-    filename: DeepSeek-R1-Distill-Qwen-7B-Q4_K_M.gguf
-    artifact_path: local_models/gguf/DeepSeek-R1-Distill-Qwen-7B-Q4_K_M.gguf
-    vram_mb: 5400
-    is_pinned: false
-    license: mit
-    context_window: 8192
-    max_output_tokens: 6144
-    config: {n_ctx: 8192, n_gpu_layers: -1, n_batch: 512, flash_attn: true, type_k: q8_0, type_v: q8_0,
-             chat_format: null, replicas: 1, auto_reduce_ctx: true, ctx_fallback: [8192, 4096]}
-
-  - alias: local/nomic-embed
-    provider: llamacpp
-    upstream_name: nomic-embed
-    model_type: embedding
-    tier: light
-    device: gpu
-    runtime_backend: llama_cpp_python
-    hf_repo: nomic-ai/nomic-embed-text-v1.5-GGUF
-    filename: nomic-embed-text-v1.5.f16.gguf
-    artifact_path: local_models/gguf/nomic-embed-text-v1.5.f16.gguf
-    vram_mb: 400
-    is_pinned: false
-    license: apache-2.0
-    supports_streaming: false
-    context_window: 2048
-    embedding_dimensions: 768
-    config: {n_ctx: 2048, n_gpu_layers: -1, embedding: true, pooling: mean,
-             query_prefix: "search_query: ", document_prefix: "search_document: "}
-
-  # ===================== C. Pendukung OpenVINO (NPU) =====================
-  - alias: local/bge-m3
-    provider: openvino
-    upstream_name: bge-m3
-    model_type: embedding
-    tier: light
-    device: npu
-    runtime_backend: openvino_embedding
-    hf_repo: BAAI/bge-m3
-    artifact_path: local_models/openvino/bge-m3-int8
-    vram_mb: 700
-    is_pinned: true
-    license: mit
-    supports_streaming: false
-    context_window: 512
-    embedding_dimensions: 1024
-    config: {device: NPU, max_seq_len: 512, static_batch: 8, pooling: cls, normalize: true,
+    config: {device: NPU, component_devices: {text_encoder: NPU, unet: NPU, vae: NPU},
+             tasks: [text-to-image, image-to-image], guidance_scale: 7.5,
+             allowed_sizes: ["512x512"], default_steps: 25, max_steps: 50, default_strength: 0.6,
              cache_dir: local_models/ov_cache}
 
   # ===================== Remote (contoh) =====================
@@ -250,13 +133,13 @@ models:
 routes:
   - alias: fast
     description: task ringan
-    targets: [{model: local/llama-3.2-3b, priority: 1}, {model: local/qwen2.5-7b, priority: 2}, {model: gemini/flash, priority: 3}]
+    targets: [{model: local/qwen2.5-7b, priority: 1}, {model: gemini/flash, priority: 2}]
   - alias: smart
     description: task berat / agent
     targets: [{model: anthropic/claude-sonnet, priority: 1}, {model: openai/gpt-heavy, priority: 2}, {model: local/qwen2.5-7b, priority: 3}]
   - alias: local
     description: lokal saja (privasi)
-    targets: [{model: local/qwen2.5-7b, priority: 1}, {model: local/llama-3.1-8b, priority: 2}]
+    targets: [{model: local/qwen2.5-7b, priority: 1}, {model: local/qwen2.5-coder-7b, priority: 2}]
   - alias: code
     description: chat/agent kode
     targets: [{model: local/qwen2.5-coder-7b, priority: 1}, {model: anthropic/claude-sonnet, priority: 2}, {model: local/qwen2.5-7b, priority: 3}]
@@ -266,12 +149,9 @@ routes:
   - alias: vision
     description: gambar -> teks
     targets: [{model: local/qwen2-vl-2b, priority: 1}, {model: openai/gpt-light, priority: 2}]
-  - alias: reason
-    description: reasoning lokal
-    targets: [{model: local/deepseek-r1-qwen-7b, priority: 1}, {model: local/phi-3.5-mini, priority: 2}]
   - alias: image
-    description: text-to-image
+    description: text-to-image & image-to-image
     targets: [{model: local/sd-1.5, priority: 1}]
   - alias: embed-default
-    description: embeddings
-    targets: [{model: local/bge-m3, priority: 1}, {model: local/nomic-embed, priority: 2}, {model: openai/text-embedding-3-small, priority: 3}]
+    description: embeddings (tidak ada embedding lokal)
+    targets: [{model: openai/text-embedding-3-small, priority: 1}]

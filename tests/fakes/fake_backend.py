@@ -13,7 +13,6 @@ from collections.abc import AsyncIterator, Iterator
 from typing import Any, ClassVar
 
 from runtime.backends.base import (
-    EmbedResult,
     ImageResult,
     LoadResult,
     LocalBackend,
@@ -35,6 +34,7 @@ class FakeBackend(LocalBackend):
         super().__init__(spec)
         self._loaded = False
         self.cancelled = False
+        self.last_image_request: dict[str, Any] | None = None
         self.threads: set[str] = set()
         FakeBackend.instances.append(self)
 
@@ -48,8 +48,8 @@ class FakeBackend(LocalBackend):
         limit = self.cfg.get("oom_above_ctx")
         if limit is not None and (self.spec.n_ctx or 0) > int(limit):
             raise RuntimeError(
-                f"ggml_vulkan: failed to allocate buffer of size X: out of memory (n_ctx="
-                f"{self.spec.n_ctx})"
+                "Exception from src\\plugins\\intel_npu: ZE_RESULT_ERROR_OUT_OF_DEVICE_MEMORY "
+                f"(n_ctx={self.spec.n_ctx})"
             )
         if self.cfg.get("fail_load"):
             raise FileNotFoundError(self.cfg["fail_load"])
@@ -126,15 +126,10 @@ class FakeBackend(LocalBackend):
 
         return iterate_in_thread(self.executor, produce, cancel)
 
-    async def embed(self, inputs: list[str], **kwargs: Any) -> EmbedResult:
-        return EmbedResult(
-            vectors=[[float(len(t)), 1.0] for t in inputs],
-            prompt_tokens=sum(len(t) for t in inputs),
-        )
-
     async def generate_images(
         self, req: dict[str, Any], cancel: asyncio.Event
     ) -> list[ImageResult]:
+        self.last_image_request = req
         n = int(req.get("n", 1))
         seed = int(req.get("seed", 42))
         return [

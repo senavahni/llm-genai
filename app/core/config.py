@@ -49,7 +49,6 @@ class Settings(BaseSettings):
     models_dir: str = "./local_models"
     ov_cache_dir: str = "./local_models/ov_cache"
     hf_home: str = "./local_models/hf_cache"
-    llama_gpu_backend: Literal["cuda", "vulkan"] = "cuda"
     gpu_total_mb: int = 8192
     gpu_reserve_mb: int = 1000
     npu_total_mb: int = 8192
@@ -58,7 +57,6 @@ class Settings(BaseSettings):
     runtime_queue_timeout_s: int = 30
     runtime_min_residency_s: int = 60
     local_first_token_timeout_s: int = 120
-    llama_server_exe: str | None = None  # backend cadangan
 
     @field_validator("cors_origins", mode="before")
     @classmethod
@@ -87,11 +85,6 @@ class Settings(BaseSettings):
         if len(raw) < MIN_SECRET_LEN:
             raise ValueError(f"terlalu lemah: minimal {MIN_SECRET_LEN} karakter")
         return v
-
-    @field_validator("llama_server_exe", mode="before")
-    @classmethod
-    def _empty_to_none(cls, v: object) -> object:
-        return v or None
 
     @property
     def gpu_budget_mb(self) -> int:

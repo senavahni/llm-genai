@@ -30,11 +30,13 @@ DEFAULT_OOM_PATTERNS: tuple[str, ...] = (
     r"failed to allocate",
     r"\bOOM\b",
     r"ErrorCode -5\b",
+    # plugin GPU OpenVINO (OpenCL/oneDNN)
     r"CL_OUT_OF_RESOURCES",
     r"CL_MEM_OBJECT_ALLOCATION_FAILURE",
-    r"ErrorOutOfDeviceMemory",
-    r"vk::.*OutOfDeviceMemory",
-    r"cudaMalloc failed",
+    r"out of GPU resources",
+    r"Exceeded max size of memory (object )?allocation",
+    # plugin NPU OpenVINO (Level Zero)
+    r"ZE_RESULT_ERROR_OUT_OF_(DEVICE|HOST)_MEMORY",
     r"insufficient memory",
 )
 

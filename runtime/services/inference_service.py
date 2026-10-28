@@ -52,26 +52,6 @@ class InferenceService:
             result["x_runtime"] = x_runtime(lease, int((time.perf_counter() - start) * 1000))
         return result
 
-    async def embeddings(self, body: dict[str, Any], request_id: str | None) -> dict[str, Any]:
-        spec, manager = self.resolve(body["model"])
-        raw = body.get("input")
-        inputs = [raw] if isinstance(raw, str) else list(raw or [])
-        options = {k: v for k, v in body.items() if k not in ("model", "input", "encoding_format")}
-        async with manager.acquire(spec, request_id) as lease:
-            start = time.perf_counter()
-            result = await lease.backend.embed(inputs, **options)
-            meta = x_runtime(lease, int((time.perf_counter() - start) * 1000))
-        return {
-            "object": "list",
-            "model": spec.upstream_name,
-            "data": [
-                {"object": "embedding", "index": i, "embedding": v}
-                for i, v in enumerate(result.vectors)
-            ],
-            "usage": {"prompt_tokens": result.prompt_tokens, "total_tokens": result.prompt_tokens},
-            "x_runtime": meta,
-        }
-
     async def images(
         self, body: dict[str, Any], request_id: str | None, cancel: asyncio.Event
     ) -> dict[str, Any]:

@@ -36,7 +36,6 @@ async def test_load_providers_models_routes(db, keys, caplog):
         await registry.load()
     try:
         assert isinstance(registry.get("anthropic"), AnthropicProvider)
-        assert isinstance(registry.get("llamacpp"), LocalRuntimeProvider)
         assert isinstance(registry.get("openvino"), LocalRuntimeProvider)
         # provider remote tanpa API key ter-skip dengan WARNING, tidak crash
         assert registry.get("openai") is None and registry.get("gemini") is None
@@ -45,8 +44,8 @@ async def test_load_providers_models_routes(db, keys, caplog):
 
         cat = registry.catalog
         coder = cat.get_model("local/qwen2.5-coder-1.5b")
-        assert coder.device == "gpu" and coder.is_pinned and coder.supports_fim
-        assert coder.runtime_backend == "llama_cpp_python" and coder.vram_mb > 0
+        assert coder.device == "npu" and coder.is_pinned and coder.supports_fim
+        assert coder.runtime_backend == "openvino_llm" and coder.vram_mb > 0
         assert cat.get_model("local/sd-1.5").provider_code == "openvino"
         smart = cat.get_route("smart")
         assert [t.model_alias for t in smart.targets] == [

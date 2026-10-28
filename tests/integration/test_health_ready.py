@@ -25,13 +25,13 @@ async def test_ready_degraded_when_runtime_down(db):
     )
     cfg = ProviderConfig(
         id=uuid.uuid4(),
-        code="llamacpp",
+        code="openvino",
         kind="local",
         display_name="l",
         base_url="http://127.0.0.1:8100/v1",
         api_key_env="RUNTIME_TOKEN",
     )
-    registry.providers = {"llamacpp": LocalRuntimeProvider(cfg, registry.http, settings)}
+    registry.providers = {"openvino": LocalRuntimeProvider(cfg, registry.http, settings)}
     registry.disabled = {"openai": "API key kosong"}
     app.state.registry = registry
 
@@ -41,5 +41,5 @@ async def test_ready_degraded_when_runtime_down(db):
     assert r.status_code == 200  # DB hidup → gateway tetap melayani remote provider
     body = r.json()
     assert body["status"] == "degraded" and body["db"] is True
-    assert body["providers"]["llamacpp"]["ok"] is False
+    assert body["providers"]["openvino"]["ok"] is False
     assert body["providers"]["openai"]["ok"] is None

@@ -1,0 +1,9 @@
+{
+  "alias": "local/qwen2.5-coder-1.5b",
+  "device": "NPU",
+  "test": "fim",
+  "ok": true,
+  "seconds": 15.5,
+  "completion": "    if n <= 1:\n        return False\n    if n <= 3:\n        return True\n    if n % 2 == 0 or n % 3 == 0:\n        return False\n    i = 5\n    while i * i <= n:\n        if n % i == 0 or n % (i + 2) == 0:\n            return False\n        i += 6\n    return True",
+  "total_s": 6.03
+}

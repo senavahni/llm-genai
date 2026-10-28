@@ -1,0 +1,21 @@
+{
+  "alias": "local/qwen2.5-7b",
+  "device": "GPU",
+  "test": "tool_call",
+  "ok": true,
+  "seconds": 32.3,
+  "raw_tool_output": "<tool_call>\n{\"name\": \"get_weather\", \"arguments\": {\"city\": \"Bandung\"}}\n</tool_call>",
+  "tool_calls": [
+    {
+      "id": "call_95dca03b",
+      "type": "function",
+      "function": {
+        "name": "get_weather",
+        "arguments": "{\"city\": \"Bandung\"}"
+      }
+    }
+  ],
+  "json_output": "{\n  \"kota\": \"Bandung\",\n  \"provinsi\": \"Jawa Barat\"\n}",
+  "ok_tool": true,
+  "ok_json": true
+}

@@ -1,15 +1,12 @@
-"""Deteksi GPU/NPU yang benar-benar bisa dipakai library inferensi.
+"""Deteksi GPU/NPU yang benar-benar bisa dipakai OpenVINO (satu-satunya stack inferensi lokal).
 
-- gpu: llama.cpp (llama-cpp-python) dengan GPU offload (CUDA/Vulkan). Info pendukung dari
-  OpenVINO device `GPU` (bila GPU Intel) dan `nvidia-smi` (bila NVIDIA).
+- gpu: OpenVINO device `GPU` (Intel iGPU/Arc).
 - npu: OpenVINO device `NPU` (Intel AI Boost).
-Import library berat dilakukan di sini (bukan di gateway). Jalankan di thread (blocking)."""
+Device `CPU` sengaja tidak dilaporkan sebagai target inferensi. Import library berat dilakukan
+di sini (bukan di gateway). Jalankan di thread (blocking)."""
 
 import contextlib
-import io
 import platform
-import shutil
-import subprocess
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
@@ -57,6 +54,10 @@ def _probe_openvino(result: DeviceProbe) -> None:
     core = ov.Core()
     result.system["openvino_version"] = ov.__version__
     result.system["openvino_devices"] = list(core.available_devices)
+    with contextlib.suppress(Exception):
+        import openvino_genai
+
+        result.system["openvino_genai_version"] = openvino_genai.__version__
     for dev in core.available_devices:
         props: dict[str, Any] = {}
         for prop in _OV_PROPS:
@@ -64,62 +65,21 @@ def _probe_openvino(result: DeviceProbe) -> None:
                 props[prop] = str(core.get_property(dev, prop))
         if dev.startswith("NPU"):
             info = result.npu
-            info.available = True
-            info.name = props.get("FULL_DEVICE_NAME")
             if props.get("NPU_DEVICE_TOTAL_MEM_SIZE"):
                 info.total_mem_mb = int(props["NPU_DEVICE_TOTAL_MEM_SIZE"]) // (1024 * 1024)
-            info.via.append("openvino")
-            info.details["openvino"] = props
         elif dev.startswith("GPU"):
             info = result.gpu
-            info.name = info.name or props.get("FULL_DEVICE_NAME")
             if props.get("GPU_DEVICE_TOTAL_MEM_SIZE") and not info.total_mem_mb:
                 info.total_mem_mb = int(props["GPU_DEVICE_TOTAL_MEM_SIZE"]) // (1024 * 1024)
-            info.details.setdefault("openvino", {})[dev] = props
-            info.details["openvino_gpu"] = True
-
-
-def _probe_llama(result: DeviceProbe) -> None:
-    try:
-        buf = io.StringIO()
-        with contextlib.redirect_stderr(buf):
-            import llama_cpp
-
-            offload = bool(llama_cpp.llama_supports_gpu_offload())
-    except Exception as exc:  # noqa: BLE001
-        result.errors.append(f"llama_cpp tidak tersedia: {exc}")
-        return
-    result.system["llama_cpp_version"] = llama_cpp.__version__
-    info = result.gpu
-    info.details["llama_cpp_gpu_offload"] = offload
-    ggml_lines = [ln for ln in buf.getvalue().splitlines() if ln.startswith("ggml_")]
-    if ggml_lines:
-        info.details["ggml"] = ggml_lines
-    if offload:
+            # iGPU (UMA) berbagi RAM sistem: penting untuk perhitungan budget
+            info.details["uma"] = "INTEGRATED" in props.get("DEVICE_TYPE", "").upper()
+        else:
+            continue
         info.available = True
-        info.via.append("llama_cpp")
-
-
-def _probe_nvidia(result: DeviceProbe) -> None:
-    exe = shutil.which("nvidia-smi")
-    if not exe:
-        return
-    try:
-        out = subprocess.run(
-            [exe, "--query-gpu=name,memory.total,driver_version", "--format=csv,noheader,nounits"],
-            capture_output=True,
-            text=True,
-            timeout=10,
-            check=True,
-        ).stdout.strip()
-    except Exception as exc:  # noqa: BLE001
-        result.errors.append(f"nvidia-smi gagal: {exc}")
-        return
-    if out:
-        name, mem, driver = (x.strip() for x in out.splitlines()[0].split(","))
-        result.gpu.name = name
-        result.gpu.total_mem_mb = int(float(mem))
-        result.gpu.details["nvidia"] = {"driver": driver}
+        info.name = info.name or props.get("FULL_DEVICE_NAME")
+        if "openvino" not in info.via:
+            info.via.append("openvino")
+        info.details.setdefault("openvino", {})[dev] = props
 
 
 def _probe_system(result: DeviceProbe) -> None:
@@ -133,15 +93,9 @@ def _probe_system(result: DeviceProbe) -> None:
         result.system["ram_available_mb"] = psutil.virtual_memory().available // (1024 * 1024)
 
 
-def detect(*, llama: bool = True, openvino: bool = True) -> DeviceProbe:
+def detect(*, openvino: bool = True) -> DeviceProbe:
     result = DeviceProbe()
     _probe_system(result)
     if openvino:
         _probe_openvino(result)
-    _probe_nvidia(result)
-    if llama:
-        _probe_llama(result)
-    # GPU terintegrasi (UMA) berbagi RAM sistem: penting untuk perhitungan budget
-    ggml = " ".join(result.gpu.details.get("ggml", []))
-    result.gpu.details["uma"] = "uma: 1" in ggml or "iGPU" in (result.gpu.name or "")
     return result

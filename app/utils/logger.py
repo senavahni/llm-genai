@@ -216,7 +216,7 @@ def setup_logging(
             access_handlers.append(ch)
         _attach(access, access_handlers)
     else:
-        # log native llama.cpp/OpenVINO ditulis level DEBUG → muncul di runtime.log bila
+        # log native OpenVINO ditulis level DEBUG → muncul di runtime.log bila
         # LOG_LEVEL=DEBUG, tersaring otomatis pada level lebih tinggi.
         logging.getLogger(RUNTIME_NATIVE_LOGGER).setLevel(logging.DEBUG)
 

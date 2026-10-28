@@ -168,7 +168,7 @@ async def test_client_key_requires_project(db):
 
 async def test_local_model_without_backend_rejected(db):
     async with SessionLocal() as s:
-        provider = Provider(code="llamacpp", kind="local", display_name="x")
+        provider = Provider(code="openvino", kind="local", display_name="x")
         s.add(provider)
         await s.flush()
         s.add(
@@ -190,6 +190,7 @@ async def test_local_model_without_backend_rejected(db):
         ("requests", "endpoint", "chat"),
         ("requests", "status", "done"),
         ("models", "device", "tpu"),
+        ("models", "runtime_backend", "llama_cpp_python"),
         ("projects", "status", "deleted"),
     ],
 )
@@ -205,7 +206,7 @@ async def test_check_constraints(db, table, column, value):
                 "alias": "a",
                 "upstream_name": "u",
                 "model_type": "chat",
-                "runtime_backend": "llama_cpp_python",
+                "runtime_backend": "openvino_llm",
             },
             "projects": {"slug": "s", "name": "n"},
         }[table]
@@ -246,14 +247,15 @@ async def test_seed_idempotent_and_complete(db):
             await manage._seed(s, data, update_local=False)
 
     async with SessionLocal() as s:
-        assert await _count(s, Provider) == 5
-        assert await _count(s, Model, Model.device != "remote") == 11
-        assert await _count(s, ModelRoute) == 9
+        assert await _count(s, Provider) == len(data["providers"])
+        n_local = len([m for m in data["models"] if m.get("device", "remote") != "remote"])
+        assert await _count(s, Model, Model.device != "remote") == n_local == 5
+        assert await _count(s, ModelRoute) == len(data["routes"])
         n_targets = sum(len(r["targets"]) for r in data["routes"])
         assert await _count(s, ModelRouteTarget) == n_targets
         local = (
             await s.execute(
-                select(Provider.base_url, Provider.api_key_env).where(Provider.code == "llamacpp")
+                select(Provider.base_url, Provider.api_key_env).where(Provider.code == "openvino")
             )
         ).one()
         assert local.api_key_env == "RUNTIME_TOKEN"
@@ -272,6 +274,7 @@ async def test_seed_update_local_writes_audit(db):
         await manage._seed(s, data, update_local=False)
 
     measured = next(m for m in data["models"] if m["alias"] == "local/qwen2.5-7b")
+    original_vram = measured["vram_mb"]
     measured["vram_mb"] = 5123
     measured["artifact_sha256"] = "b" * 64
     async with SessionLocal() as s:
@@ -284,4 +287,66 @@ async def test_seed_update_local_writes_audit(db):
         audit = (await s.execute(select(AuditLog))).scalars().all()
         assert len(audit) == 1
         assert audit[0].actor_key_id is None
-        assert audit[0].before["vram_mb"] == 5400 and audit[0].after["vram_mb"] == 5123
+        assert audit[0].before["vram_mb"] == original_vram and audit[0].after["vram_mb"] == 5123
+
+
+async def test_seed_update_local_migrates_retired_and_disables_stale(db):
+    """Kondisi pasca-migrasi 0002: model katalog lama ber-backend `retired` & nonaktif."""
+    manage = _load_manage()
+    data = _seed_data()
+    async with SessionLocal() as s:
+        await manage._seed(s, data, update_local=False)
+        qwen = (
+            await s.execute(select(Model).where(Model.alias == "local/qwen2.5-7b"))
+        ).scalar_one()
+        qwen.runtime_backend, qwen.is_enabled = "retired", False
+        llama = Model(
+            provider_id=qwen.provider_id,
+            alias="local/llama-3.1-8b",
+            upstream_name="llama-3.1-8b",
+            model_type="chat",
+            device="gpu",
+            runtime_backend="retired",
+        )
+        s.add(llama)
+        await s.flush()
+        old_route = ModelRoute(alias="reason")
+        s.add(old_route)
+        await s.flush()
+        local_route = (
+            await s.execute(select(ModelRoute).where(ModelRoute.alias == "local"))
+        ).scalar_one()
+        s.add_all(
+            [
+                ModelRouteTarget(route_id=old_route.id, model_id=llama.id, priority=1),
+                ModelRouteTarget(route_id=local_route.id, model_id=llama.id, priority=9),
+            ]
+        )
+        await s.commit()
+
+    async with SessionLocal() as s:
+        await manage._seed(s, data, update_local=True)
+    async with SessionLocal() as s:
+        rows = {m.alias: m for m in (await s.execute(select(Model))).scalars().all()}
+        assert rows["local/qwen2.5-7b"].runtime_backend == "openvino_llm"
+        assert rows["local/qwen2.5-7b"].is_enabled
+        assert not rows["local/llama-3.1-8b"].is_enabled
+        audit = (await s.execute(select(AuditLog))).scalars().all()
+        actions = sorted(
+            (a.action, (a.after or a.before)["alias" if a.after else "route"]) for a in audit
+        )
+        assert actions == [
+            ("model.disable_local", "local/llama-3.1-8b"),
+            ("model.update_local", "local/qwen2.5-7b"),
+            ("route.remove_target", "local"),
+            ("route.remove_target", "reason"),
+        ]
+        # target route ke model nonaktif hilang; target lain di route yang sama tetap
+        llama_targets = await _count(
+            s, ModelRouteTarget, ModelRouteTarget.model_id == rows["local/llama-3.1-8b"].id
+        )
+        assert llama_targets == 0
+        local_route = (
+            await s.execute(select(ModelRoute).where(ModelRoute.alias == "local"))
+        ).scalar_one()
+        assert await _count(s, ModelRouteTarget, ModelRouteTarget.route_id == local_route.id) == 2

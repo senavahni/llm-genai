@@ -1,5 +1,5 @@
 """Factory backend lokal. Modul backend diimpor lazy agar runtime tetap bisa start (dan gateway
-tidak pernah mengimpor llama_cpp/openvino) walau library akselerator belum terpasang."""
+tidak pernah mengimpor openvino) walau library akselerator belum terpasang."""
 
 import importlib
 
@@ -8,10 +8,9 @@ from runtime.backends.base import LocalBackend
 from runtime.core.catalog import LocalModelSpec
 
 BACKENDS: dict[str, str] = {
-    "llama_cpp_python": "runtime.backends.llamacpp_backend:LlamaCppBackend",  # TASK-11
-    "llama_server": "runtime.backends.llama_server_backend:LlamaServerBackend",  # TASK-11
+    "openvino_llm": "runtime.backends.ov_llm_backend:OVLLMBackend",  # TASK-11
+    "openvino_vlm": "runtime.backends.ov_vlm_backend:OVVLMBackend",  # TASK-11
     "openvino_diffusion": "runtime.backends.ov_diffusion_backend:OVDiffusionBackend",  # TASK-12
-    "openvino_embedding": "runtime.backends.ov_embedding_backend:OVEmbeddingBackend",  # TASK-12
 }
 
 

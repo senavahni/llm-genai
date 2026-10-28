@@ -1,6 +1,7 @@
-# secrets
+# secrets (.env.example tetap di-commit)
 .env
-.env.legacy
+.env.*
+!.env.example
 *.bak
 
 # python
@@ -9,22 +10,26 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
-*.pyc
-__pycache__/
 
 # logs
 logs/*
 !logs/.gitkeep
 
-# model lokal & hasil generasi (folder tetap ada via .gitkeep)
+# model lokal, cache compile & hasil generasi (folder tetap ada via .gitkeep)
 local_models/**
 !local_models/**/
 !local_models/**/.gitkeep
 storage/**
 !storage/**/
 !storage/**/.gitkeep
-*.gguf
+storages/
 *.bin
+*.part
+
+# salinan lokal dokumen sumber (versi resmi: llm_gateway_docs_v2/docs/PRD.md)
+/PRD.md
+/llm_gateway_docs_v2.zip
 
 # editor
 .vscode/
+.idea/

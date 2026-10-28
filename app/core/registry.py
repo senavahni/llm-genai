@@ -30,7 +30,6 @@ PROVIDER_CLASSES: dict[str, type[BaseProvider]] = {
     "openai": OpenAIProvider,
     "anthropic": AnthropicProvider,
     "gemini": GeminiProvider,
-    "llamacpp": LocalRuntimeProvider,
     "openvino": LocalRuntimeProvider,
 }
 

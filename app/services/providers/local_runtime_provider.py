@@ -1,6 +1,5 @@
-"""Adapter gateway → Local Runtime (llama.cpp & OpenVINO). Runtime berbicara format OpenAI,
-jadi kelas ini turunan OpenAIProvider; satu kelas dipakai untuk provider `llamacpp` dan
-`openvino` (code dari DB)."""
+"""Adapter gateway → Local Runtime (OpenVINO di GPU/NPU). Runtime berbicara format OpenAI,
+jadi kelas ini turunan OpenAIProvider (provider `openvino`)."""
 
 import asyncio
 import base64

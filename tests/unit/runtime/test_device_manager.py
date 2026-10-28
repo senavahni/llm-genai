@@ -202,8 +202,8 @@ async def test_vram_over_budget_and_load_failure():
     m = _manager(events=events)
     with pytest.raises(ModelLoadFailed, match="melebihi budget"):
         await _use(m, spec("local/huge", 9000))
-    with pytest.raises(ModelLoadFailed, match="missing.gguf"):
-        await _use(m, spec("local/missing", 100, fail_load="missing.gguf"))
+    with pytest.raises(ModelLoadFailed, match="openvino_model.xml"):
+        await _use(m, spec("local/missing", 100, fail_load="missing/openvino_model.xml"))
     assert events.names() == ["load_failed", "load_failed"]
 
 
@@ -211,7 +211,7 @@ async def test_backend_unavailable_records_load_failed():
     events = Events()
 
     def no_backend(_spec):
-        raise ModelLoadFailed("backend llama_cpp_python belum tersedia")
+        raise ModelLoadFailed("backend openvino_llm belum tersedia")
 
     m = DeviceManager("gpu", 7200, backend_factory=no_backend, events=events)
     with pytest.raises(ModelLoadFailed):

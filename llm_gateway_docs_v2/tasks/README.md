@@ -14,8 +14,8 @@ Urutan pengerjaan mengikuti dependensi. Total estimasi ±36 hari kerja (1 develo
 | [TASK-08](TASK-08-provider-anthropic-gemini.md) | Adapter Anthropic & Gemini | M2 | P0 | 2 h | 06 |
 | [TASK-09](TASK-09-hardware-model-acquisition.md) | **Hardware probe, akselerator, unduh/konversi & ukur model** | M3 Local Runtime | P0 | 2 h | 01, 04 |
 | [TASK-10](TASK-10-local-runtime-device-manager.md) | **Local Runtime + Device/VRAM Manager + adapter gateway** | M3 | P0 | 3 h | 03, 04, 06, 09 |
-| [TASK-11](TASK-11-runtime-backend-llamacpp.md) | **Backend llama-cpp-python: teks, kode/FIM, vision, embedding** | M3 | P0 | 3 h | 09, 10 |
-| [TASK-12](TASK-12-runtime-backend-openvino.md) | **Backend OpenVINO: SD v1.5 & bge-m3 di NPU** | M3 | P0 | 2 h | 09, 10 |
+| [TASK-11](TASK-11-runtime-backend-openvino-llm.md) | **Backend OpenVINO GenAI: Qwen teks, kode/FIM, vision (GPU/NPU)** | M3 | P0 | 3 h | 09, 10 |
+| [TASK-12](TASK-12-runtime-backend-openvino.md) | **Backend OpenVINO: SD v1.5 text-to-image & image-to-image di NPU** | M3 | P0 | 2 h | 09, 10 |
 | [TASK-13](TASK-13-routing-fallback.md) | Router & fallback (termasuk lokal) | M4 Core API | P0 | 2 h | 06–08, 10 |
 | [TASK-14](TASK-14-public-api-v1.md) | Public API v1 (+ images, FIM, vision) | M4 | P0 | 3 h | 05, 11, 12, 13, 15 |
 | [TASK-15](TASK-15-usage-accounting.md) | Usage, cost & akuntabilitas device | M4 | P0 | 1.5 h | 04, 13 |
@@ -31,7 +31,7 @@ Urutan pengerjaan mengikuti dependensi. Total estimasi ±36 hari kerja (1 develo
 ## Perubahan dari versi task sebelumnya
 | Lama | Baru |
 |---|---|
-| TASK-09 Adapter llama.cpp (llama-server) | Diganti **TASK-09** (hardware & model), **TASK-10** (runtime), **TASK-11** (llama-cpp-python) |
+| TASK-09 Adapter llama.cpp (llama-server) | Diganti **TASK-09** (hardware & model), **TASK-10** (runtime), **TASK-11** (awalnya llama-cpp-python; sejak 28 Okt 2026 OpenVINO GenAI) |
 | TASK-10 Adapter Hugging Face (torch, CPU) | Diganti **TASK-12** (OpenVINO di NPU). Model HF dijalankan via `optimum[openvino]`, bukan torch. |
 | TASK-11 … TASK-21 | Dinomori ulang menjadi TASK-13 … TASK-23, isinya diperluas untuk model lokal, gambar, FIM, dan device |
 

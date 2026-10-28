@@ -1,0 +1,8 @@
+{
+  "alias": "local/qwen2.5-coder-7b",
+  "device": "GPU",
+  "test": "code_chat",
+  "ok": true,
+  "seconds": 57.9,
+  "content": "```python\nimport re\n\ndef slugify(text: str) -> str:\n    # Menghapus karakter non-alphanumeric dan menggantinya dengan underscore\n    text = re.sub(r'[^\\w\\s]', '', text)\n    # Mengubah spasi menjadi underscore\n    text = re.sub(r'\\s+', '_', text)\n    # Mengubah ke lowercase\n    text = text.lower()\n    return text\n\n# Unit test menggunakan pytest\ndef test_slugify():\n    assert slugify(\"Hello World!\") == \"hello_world\"\n    assert slugify(\"Python 3.8\") == \"python_38\"\n    assert slugify(\"Special_Characters!@#\") == \"special_characters\"\n    assert slugify(\"  Leading and trailing spaces  \") == \"leading_and_trailing_spaces\"\n    assert slugify(\"Already_a-slug\") == \"already_a_slug\"\n    assert slugify(\"\") == \"\"\n    assert slugify(\"12345\") == \"12345\"\n    print(\"All tests passed!\")\n\n# Untuk menjalankan unit test, simpan kode di atas ke file dengan ekstensi .py\n# Kemudian jalankan dengan perintah: pytest nama_file.py\n```\n\nUntuk menjalankan unit test, simpan kode di atas ke file dengan ekstensi `.py` dan jalankan dengan perintah `pytest nama_file.py`. Pastikan Anda telah menginstal pytest jika belum dengan perintah `pip install pytest`."
+}

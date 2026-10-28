@@ -1,0 +1,18 @@
+{
+  "alias": "local/sd-1.5",
+  "device": "NPU (text_encoder, unet, vae)",
+  "test": "scripts/test_sd.py (OpenVINO GenAI, sd15-int8, 512x512, 20 step, seed 42)",
+  "ok": true,
+  "compile_first_s": 118.1,
+  "compile_cached_s": 3.25,
+  "t2i_generate_s": 20.61,
+  "t2i_deterministic": true,
+  "i2i_generate_s": 13.27,
+  "i2i_strength": 0.6,
+  "cpu_ratio": {"t2i": 0.01, "i2i": 0.02},
+  "device_mem_delta_mb": 3094,
+  "rss_delta_mb": 5324,
+  "images": ["sd15_t2i.png", "sd15_i2i.png"],
+  "fp16_comparison": {"compile_first_s": 136.7, "t2i_generate_s": 21.33, "i2i_generate_s": 13.42,
+                      "device_mem_delta_mb": 3119, "rss_delta_mb": 6046}
+}
