@@ -25,7 +25,7 @@ from app.models.base import EMPTY_JSONB, Base, CreatedAtMixin, check_in
 if TYPE_CHECKING:
     from app.models.image import GeneratedImage
 
-ENDPOINTS = ("chat.completions", "completions", "embeddings", "images.generations")
+ENDPOINTS = ("chat.completions", "completions", "embeddings", "images.generations", "images.edits")
 REQUEST_STATUSES = ("pending", "success", "error", "cancelled")
 ATTEMPT_STATUSES = ("success", "error", "cancelled")
 

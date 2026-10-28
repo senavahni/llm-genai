@@ -7,6 +7,7 @@ from app.core.config import Settings
 from app.core.database import dispose_db, init_db
 from app.core.registry import load_registry
 from app.services.key_service import key_service
+from app.services.router_service import Router
 from app.utils.logger import get_logger, setup_logging, shutdown_logging
 from app.utils.streaming import drain_finishers
 
@@ -25,6 +26,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     registry = await load_registry(app)
     # klien httpx2 bersama (SDK openai/anthropic memakai httpx2), dimiliki registry
     app.state.http = registry.http
+    # router memegang referensi registry: reload katalog langsung terlihat
+    app.state.router = Router(registry)
     try:
         yield
     finally:

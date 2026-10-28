@@ -112,6 +112,7 @@ class RouteConfig:
     description: str | None = None
     is_enabled: bool = True
     targets: tuple[RouteTarget, ...] = ()  # terurut priority
+    config: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
     def from_row(cls, row: "ModelRoute") -> "RouteConfig":
@@ -125,4 +126,5 @@ class RouteConfig:
             description=row.description,
             is_enabled=row.is_enabled,
             targets=tuple(targets),
+            config=dict(row.config or {}),
         )

@@ -40,6 +40,7 @@ class Settings(BaseSettings):
     storage_dir: str = "./storage"
     sse_heartbeat_s: float = 15.0  # komentar `: ping` saat stream diam; 0 = mati
     provider_health_timeout_s: float = 5.0
+    first_token_timeout_s: float = 60.0  # stream provider remote: batas tunggu chunk pertama
 
     # --- Local Runtime (dipakai gateway & runtime) ---
     runtime_host: str = "127.0.0.1"

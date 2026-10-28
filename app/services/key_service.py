@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import get_settings
 from app.core.database import SessionLocal
 from app.models.api_key import KEY_ROLES, VALID_SCOPES, ApiKey
-from app.models.project import Project
+from app.models.project import Project, ProjectAllowedModel
 from app.schemas.common import AuthContext
 from app.utils import crypto
 from app.utils.errors import AuthenticationError, InvalidRequestError, NotFound, ProjectSuspended
@@ -45,6 +45,8 @@ class _CachedKey:
     project_status: str | None
     log_payloads: bool
     payload_retention_days: int
+    image_retention_days: int = 7
+    allowed_models: tuple[str, ...] = ()
 
 
 class KeyService:
@@ -82,11 +84,26 @@ class KeyService:
                     .where(ApiKey.key_prefix == prefix)
                 )
             ).first()
-        if row is None:
-            self._cache.pop(prefix, None)
-            return None
+            if row is None:
+                self._cache.pop(prefix, None)
+                return None
+            key, project = row
+            patterns: tuple[str, ...] = ()
+            if project is not None:
+                patterns = tuple(
+                    (
+                        await session.execute(
+                            select(ProjectAllowedModel.model_pattern)
+                            .where(ProjectAllowedModel.project_id == project.id)
+                            .order_by(ProjectAllowedModel.model_pattern)
+                        )
+                    )
+                    .scalars()
+                    .all()
+                )
+            elif key.role == "admin":
+                patterns = ("*",)  # key admin tanpa project: semua model (operasional/uji)
 
-        key, project = row
         entry = _CachedKey(
             key_id=key.id,
             key_prefix=key.key_prefix,
@@ -102,6 +119,8 @@ class KeyService:
             project_status=project.status if project else None,
             log_payloads=project.log_payloads if project else False,
             payload_retention_days=project.payload_retention_days if project else 0,
+            image_retention_days=project.image_retention_days if project else 7,
+            allowed_models=patterns,
         )
         self._cache[prefix] = (entry, now + self._cache_ttl_s)
         return entry
@@ -138,6 +157,8 @@ class KeyService:
             payload_retention_days=entry.payload_retention_days,
             rpm_limit=entry.rpm_limit or settings.default_rpm_limit,
             tpm_limit=entry.tpm_limit or settings.default_tpm_limit,
+            allowed_models=entry.allowed_models,
+            image_retention_days=entry.image_retention_days,
         )
 
     def _touch_last_used(self, entry: _CachedKey) -> None:

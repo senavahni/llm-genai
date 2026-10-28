@@ -1,9 +1,11 @@
 import uuid
+from typing import Any
 
 from sqlalchemy import Boolean, CheckConstraint, ForeignKey, SmallInteger, String, Text, text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.models.base import Base, TimestampMixin, check_in, uuid_pk
+from app.models.base import EMPTY_JSONB, Base, TimestampMixin, check_in, uuid_pk
 from app.models.model import Model
 
 ROUTE_STRATEGIES = ("priority", "round_robin")
@@ -18,6 +20,8 @@ class ModelRoute(TimestampMixin, Base):
     description: Mapped[str | None] = mapped_column(Text)
     strategy: Mapped[str] = mapped_column(String(16), server_default=text("'priority'"))
     is_enabled: Mapped[bool] = mapped_column(Boolean, server_default=text("true"))
+    # opsi routing, mis. {"prefer_loaded": true}
+    config: Mapped[dict[str, Any]] = mapped_column(JSONB, server_default=EMPTY_JSONB)
 
     targets: Mapped[list["ModelRouteTarget"]] = relationship(
         back_populates="route",

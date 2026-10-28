@@ -82,10 +82,19 @@ raise UpstreamError("All candidates failed", attempts=...)
 - `max_tokens` > `models.max_output_tokens` → dipotong ke batas model dan header `X-Gateway-Warning: max_tokens_clamped` (tidak error).
 - `messages` kosong → 400.
 
+> **Catatan 28 Okt 2026:** katalog kini 8 route (route `reason` dihapus bersama DeepSeek/Phi,
+> `embed-default` hanya remote). AC8 diuji untuk 8 route tersebut. Opsi `prefer_loaded` disimpan di
+> kolom baru `model_routes.config` (migrasi 0003). Kapabilitas `image_edit` (image-to-image) =
+> `"image-to-image" ∈ models.config.tasks`.
+
 ## Deliverables
-- [ ] `router_service.py` dengan circuit breaker
-- [ ] `chat_service.py` (non-stream & stream)
-- [ ] Unit test menggunakan fake provider: urutan priority, round robin, izin glob, kapabilitas, fallback sebelum token pertama, tidak fallback setelah token pertama, error non-retryable langsung gagal
+- [x] `router_service.py` dengan circuit breaker, round robin berbobot, `prefer_loaded`,
+      `run_with_fallback` & `open_stream` generik (dipakai chat/completion/embedding/image)
+- [x] `chat_service.py` (non-stream & stream), `context.py` (`RequestCtx`, `Attempt`, `Outcome`)
+- [x] `AuthContext.allowed_models` dari `project_allowed_models` (key admin tanpa project = `*`)
+- [x] Unit test menggunakan fake provider (`tests/unit/test_router.py`, 26 test): urutan priority,
+      round robin, izin glob, kapabilitas, fallback sebelum token pertama, tidak fallback setelah
+      token pertama, timeout chunk pertama, error non-retryable langsung gagal, circuit breaker
 
 ## Acceptance Criteria
 1. Route `smart` dengan kandidat-1 fake 503 → respons sukses dari kandidat-2; attempts = 2.

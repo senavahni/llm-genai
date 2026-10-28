@@ -11,6 +11,7 @@ from app.core.config import load_settings
 from app.core.database import SessionLocal
 from app.main import create_app
 from app.models import ApiKey, Project
+from app.models.project import ProjectAllowedModel
 from app.routes import admin
 from app.schemas.common import AuthContext
 from app.services.key_service import key_service
@@ -67,6 +68,27 @@ def _bearer(key: str) -> dict[str, str]:
 
 async def _chat(client, headers):
     return await client.post("/v1/chat/completions", headers=headers, json={})
+
+
+async def test_auth_context_carries_allowed_model_patterns(db):
+    p = await _project()
+    async with SessionLocal() as s:
+        s.add_all(
+            [
+                ProjectAllowedModel(project_id=p.id, model_pattern="local/*"),
+                ProjectAllowedModel(project_id=p.id, model_pattern="code"),
+            ]
+        )
+        await s.commit()
+    full_key, _ = await _key(p)
+    ctx = await key_service.authenticate(full_key)
+    assert ctx.allowed_models == ("code", "local/*")
+    assert ctx.image_retention_days == 7
+    admin_key, _ = await _key(None, role="admin")
+    assert (await key_service.authenticate(admin_key)).allowed_models == ("*",)
+    other = await _project("tanpa-pola")
+    bare_key, _ = await _key(other)
+    assert (await key_service.authenticate(bare_key)).allowed_models == ()
 
 
 async def test_valid_key_bearer_and_x_api_key(db, client):

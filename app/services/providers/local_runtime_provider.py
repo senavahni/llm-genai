@@ -244,6 +244,21 @@ class LocalRuntimeProvider(OpenAIProvider):
             images=images, upstream_model=model.upstream_name, runtime_meta=parse_runtime_meta(data)
         )
 
+    async def loaded_aliases(self) -> set[str]:
+        """Alias model yang sedang termuat di runtime (dipakai router `prefer_loaded`)."""
+        url = self.base_url.removesuffix("/v1") + "/runtime/status"
+        resp = await self.http.get(
+            url, headers=self.default_headers(), timeout=self.settings.provider_health_timeout_s
+        )
+        devices = _json(resp).get("devices") or {}
+        return {
+            str(m.get("alias"))
+            for dev in devices.values()
+            if isinstance(dev, dict)
+            for m in dev.get("models") or []
+            if isinstance(m, dict) and m.get("alias")
+        }
+
     # ---------------------------------------------------------------- health
     async def health(self) -> ProviderHealth:
         url = self.base_url.removesuffix("/v1") + "/health/ready"
