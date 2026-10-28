@@ -49,11 +49,17 @@ SELECT r.project_id, count(*) AS req_rows, COALESCE(sum(u.request_count),0) AS a
 selisih harus 0.
 
 ## Deliverables
-- [ ] `usage_service.py` (`start`, `finish`, `finish_stream` factory)
-- [ ] Sweeper di `lifespan.py`
-- [ ] `manage.py replay-usage`
-- [ ] Endpoint verifikasi konsistensi
-- [ ] Test integrasi dengan DB nyata (database test terpisah `llm_gateway_test`)
+- [x] `usage_service.py` (`start`, `finish`, `finish_stream` factory). Record dibangun sebagai
+      data JSON murni lalu ditulis (`write_record`), sehingga fallback & replay menulis persis sama;
+      `write_record` idempoten (usage_daily hanya ditambah saat request pertama kali final)
+- [x] Sweeper di `lifespan.py` (tiap 5 menit, `pending` > 10 menit → `orphaned`)
+- [x] `manage.py replay-usage` (+ `create-project --allow` & `allow-models` untuk pola izin)
+- [x] Endpoint verifikasi konsistensi `GET /admin/usage/verify?day=` (request & image_count)
+- [x] Test integrasi dengan DB nyata (`tests/integration/test_usage.py`) + unit biaya Decimal
+
+Catatan: status `cancelled` dihitung ke `usage_daily.error_count` (bukan sukses); token yang sudah
+dihasilkan stream yang gagal/dibatalkan tetap dihitung ke biaya. Request key admin tanpa project
+tercatat di `requests` tetapi tidak di `usage_daily` (kolom project_id wajib).
 
 ## Acceptance Criteria
 1. 100 request campuran (sukses, fallback, gagal, stream cancel) → semua `requests` berstatus final, `request_attempts` sesuai jumlah percobaan.

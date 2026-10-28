@@ -1,3 +1,5 @@
+import asyncio
+import contextlib
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -8,10 +10,23 @@ from app.core.database import dispose_db, init_db
 from app.core.registry import load_registry
 from app.services.key_service import key_service
 from app.services.router_service import Router
+from app.services.usage_service import usage_service
 from app.utils.logger import get_logger, setup_logging, shutdown_logging
 from app.utils.streaming import drain_finishers
 
 log = get_logger(__name__)
+
+ORPHAN_SWEEP_INTERVAL_S = 300
+
+
+async def _sweep_orphans_forever() -> None:
+    """Request `pending` > 10 menit → error `orphaned` (TASK-15), tiap 5 menit."""
+    while True:
+        await asyncio.sleep(ORPHAN_SWEEP_INTERVAL_S)
+        try:
+            await usage_service.sweep_orphans()
+        except Exception as exc:  # noqa: BLE001 - DB down: coba lagi di putaran berikut
+            log.warning("orphan_sweep_failed", error=str(exc))
 
 
 @asynccontextmanager
@@ -28,9 +43,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.http = registry.http
     # router memegang referensi registry: reload katalog langsung terlihat
     app.state.router = Router(registry)
+    sweeper = asyncio.ensure_future(_sweep_orphans_forever())
     try:
         yield
     finally:
+        sweeper.cancel()
+        with contextlib.suppress(BaseException):
+            await sweeper
         await drain_finishers()
         await key_service.drain()
         await registry.close()

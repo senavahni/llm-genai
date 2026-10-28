@@ -2,8 +2,10 @@
 
 python scripts\\manage.py seed [--update-local]
 python scripts\\manage.py create-admin-key --name bootstrap
-python scripts\\manage.py create-project --slug agent-a --name "Agent A"
+python scripts\\manage.py create-project --slug agent-a --name "Agent A" --allow "smart,local/*"
+python scripts\\manage.py allow-models --project agent-a --patterns "smart,image"
 python scripts\\manage.py create-key --project agent-a --name dev [--scopes chat,models:read]
+python scripts\\manage.py replay-usage
 """
 
 import argparse
@@ -19,7 +21,7 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from sqlalchemy import select  # noqa: E402
+from sqlalchemy import delete, select  # noqa: E402
 from sqlalchemy.dialects.postgresql import insert  # noqa: E402
 from sqlalchemy.ext.asyncio import AsyncSession  # noqa: E402
 
@@ -34,6 +36,7 @@ from app.models import (  # noqa: E402
     Provider,
 )
 from app.models.api_key import VALID_SCOPES  # noqa: E402
+from app.models.project import ProjectAllowedModel  # noqa: E402
 from app.services.key_service import key_service  # noqa: E402
 from app.utils.helper import utcnow  # noqa: E402
 
@@ -284,8 +287,56 @@ async def cmd_create_project(args: argparse.Namespace) -> None:
             slug=args.slug, name=args.name, owner=args.owner, description=args.description
         )
         session.add(project)
+        await session.flush()
+        patterns = _patterns(args.allow)
+        session.add_all(
+            ProjectAllowedModel(project_id=project.id, model_pattern=p) for p in patterns
+        )
         await session.commit()
-        print(f"project dibuat: id={project.id} slug={project.slug}")
+        print(f"project dibuat: id={project.id} slug={project.slug} allow={patterns or '-'}")
+    if not patterns:
+        print("PERINGATAN: tanpa pola model, semua request project ini ditolak (allow-models).")
+
+
+async def cmd_allow_models(args: argparse.Namespace) -> None:
+    async with SessionLocal() as session:
+        project = (
+            await session.execute(select(Project).where(Project.slug == args.project))
+        ).scalar_one_or_none()
+        if project is None:
+            raise SystemExit(f"project '{args.project}' tidak ditemukan")
+        await session.execute(
+            delete(ProjectAllowedModel).where(ProjectAllowedModel.project_id == project.id)
+        )
+        patterns = _patterns(args.patterns)
+        session.add_all(
+            ProjectAllowedModel(project_id=project.id, model_pattern=p) for p in patterns
+        )
+        session.add(
+            AuditLog(
+                actor_key_id=None,
+                action="project.allowed_models",
+                entity_type="project",
+                entity_id=str(project.id),
+                after={"slug": project.slug, "patterns": patterns},
+            )
+        )
+        await session.commit()
+    key_service.invalidate()
+    print(f"{args.project}: pola model = {patterns or '(kosong: semua ditolak)'}")
+
+
+def _patterns(raw: str | None) -> list[str]:
+    return list(dict.fromkeys(p.strip() for p in (raw or "").split(",") if p.strip()))
+
+
+async def cmd_replay_usage(args: argparse.Namespace) -> None:
+    from app.services.usage_service import usage_service
+
+    ok, failed = await usage_service.replay()
+    print(f"replay usage: {ok} record tertulis, {failed} gagal")
+    if failed:
+        print(f"record gagal tetap di {usage_service.fallback_path}")
 
 
 async def cmd_create_key(args: argparse.Namespace) -> None:
@@ -335,7 +386,16 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--name", required=True)
     p.add_argument("--owner")
     p.add_argument("--description")
+    p.add_argument("--allow", help="pola model/route yang diizinkan, dipisah koma (glob)")
     p.set_defaults(func=cmd_create_project)
+
+    p = sub.add_parser("allow-models", help="ganti pola model/route yang diizinkan project")
+    p.add_argument("--project", required=True, help="slug project")
+    p.add_argument("--patterns", required=True, help="dipisah koma, mis. 'smart,code,local/*'")
+    p.set_defaults(func=cmd_allow_models)
+
+    p = sub.add_parser("replay-usage", help="tulis ulang logs/usage_fallback.jsonl ke DB")
+    p.set_defaults(func=cmd_replay_usage)
 
     p = sub.add_parser("create-key", help="buat client key untuk project")
     p.add_argument("--project", required=True, help="slug project")

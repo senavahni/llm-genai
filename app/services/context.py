@@ -4,12 +4,14 @@ gateway. Dibuat controller (TASK-14), diisi router/service (TASK-13), dicatat us
 import time
 import uuid
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from app.schemas.catalog import ModelConfig
 from app.schemas.common import AuthContext
 from app.schemas.unified import RuntimeMeta, Usage
 from app.utils.errors import GatewayError
+from app.utils.helper import utcnow
 
 if TYPE_CHECKING:
     from fastapi import Request
@@ -62,6 +64,7 @@ class RequestCtx:
     tags: dict[str, Any] = field(default_factory=dict)
     request_body: dict[str, Any] | None = None  # untuk payload log (bila diizinkan project)
     started: float = field(default_factory=time.perf_counter)
+    created_at: datetime = field(default_factory=utcnow)  # = requests.created_at (hari UTC)
     attempts: list[Attempt] = field(default_factory=list)
     served_by: ModelConfig | None = None
     warnings: list[str] = field(default_factory=list)
