@@ -28,11 +28,14 @@ from app.services.providers.base import drop_none
 from app.services.providers.openai_provider import OpenAIProvider
 from app.utils.errors import (
     CapabilityNotSupported,
+    ContextLengthExceeded,
     DeviceOOM,
     DeviceUnavailable,
     GatewayError,
     ModelBusy,
     ModelLoadFailed,
+    RequestCancelled,
+    UnsupportedParameter,
     UnsupportedSize,
     UpstreamBadRequest,
     UpstreamTimeout,
@@ -47,6 +50,9 @@ RUNTIME_ERROR_CODES: dict[str, type[GatewayError]] = {
     "model_load_failed": ModelLoadFailed,
     "capability_not_supported": CapabilityNotSupported,
     "unsupported_size": UnsupportedSize,
+    "unsupported_parameter": UnsupportedParameter,
+    "context_length_exceeded": ContextLengthExceeded,
+    "cancelled": RequestCancelled,
 }
 
 

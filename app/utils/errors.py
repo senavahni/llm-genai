@@ -168,6 +168,24 @@ class UnsupportedSize(InvalidRequestError):
     default_param = "size"
 
 
+class UnsupportedParameter(InvalidRequestError):
+    """Parameter valid secara OpenAI tetapi tidak didukung model/backend ini (mis. mask)."""
+
+    code = "unsupported_parameter"
+
+
+class ContextLengthExceeded(InvalidRequestError):
+    code = "context_length_exceeded"
+
+
+class RequestCancelled(GatewayError):
+    """Client memutus koneksi / membatalkan di tengah inferensi (status ala nginx 499)."""
+
+    http_status = 499
+    error_type = "request_cancelled"
+    code = "cancelled"
+
+
 class ImageNotFound(GatewayError):
     http_status = 404
     error_type = "invalid_request_error"

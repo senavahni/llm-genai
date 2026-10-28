@@ -43,6 +43,23 @@ from app.core.config import get_settings  # noqa: E402
 get_settings.cache_clear()
 
 
+def pytest_addoption(parser: pytest.Parser) -> None:
+    parser.addoption(
+        "--hardware",
+        action="store_true",
+        help="jalankan test hardware (@pytest.mark.gpu / npu) dengan model nyata di local_models/",
+    )
+
+
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+    if config.getoption("--hardware"):
+        return
+    skip = pytest.mark.skip(reason="test hardware: jalankan dengan --hardware")
+    for item in items:
+        if "gpu" in item.keywords or "npu" in item.keywords:
+            item.add_marker(skip)
+
+
 def _db_reachable() -> bool:
     parts = urlsplit(TEST_DATABASE_URL)
     try:

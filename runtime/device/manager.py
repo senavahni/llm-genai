@@ -389,6 +389,15 @@ class DeviceManager:
                 load_ms=load_ms,
                 pinned=current.is_pinned,
             )
+            if "compile_ms" in result.details:
+                # compile OpenVINO (pertama ±menit; dari CACHE_DIR ±detik) dicatat terpisah
+                self._record(
+                    "compile",
+                    current,
+                    request_id=request_id,
+                    duration_ms=int(result.details["compile_ms"]),
+                    details={"cache_hit": bool(result.details.get("cache_hit"))},
+                )
             self._record(
                 "load",
                 current,

@@ -4,6 +4,7 @@ tambahkan `x_runtime` (device, load_ms, queue_ms, infer_ms, backend)."""
 import asyncio
 import base64
 import contextlib
+import hashlib
 import time
 from collections.abc import AsyncIterator
 from typing import Any
@@ -60,11 +61,16 @@ class InferenceService:
             start = time.perf_counter()
             images = await lease.backend.generate_images(body, cancel)
             meta = x_runtime(lease, int((time.perf_counter() - start) * 1000))
+        warnings = sorted({w for img in images for w in img.warnings})
+        if warnings:
+            meta["warnings"] = warnings
         return {
             "created": int(time.time()),
             "data": [
                 {
                     "b64_json": base64.b64encode(img.png_bytes).decode(),
+                    "sha256": hashlib.sha256(img.png_bytes).hexdigest(),
+                    "bytes": len(img.png_bytes),
                     "width": img.width,
                     "height": img.height,
                     "seed": img.seed,

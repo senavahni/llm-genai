@@ -75,11 +75,13 @@ Body JSON runtime = body text-to-image + `"image": "<base64 PNG/JPEG>"` + `"stre
 - Device Manager NPU memakai budget `NPU_TOTAL_MB - NPU_RESERVE_MB`.
 
 ## Deliverables
-- [ ] `ov_diffusion_backend.py` (text-to-image + image-to-image, satu set model)
-- [ ] Validator config device (tolak `AUTO`/`CPU`)
-- [ ] Test hardware `@pytest.mark.npu`: deterministik (seed sama → sha256 sama), image-to-image,
-      cancel
-- [ ] Pembaruan `docs/hardware.md` (FP16 vs INT8, compile dengan/tanpa cache, kombinasi device)
+- [x] `ov_diffusion_backend.py` (text-to-image + image-to-image, satu set model)
+- [x] Validator config device (tolak `AUTO`/`CPU`) — `runtime/backends/ov_common.py`
+- [x] Event `compile` (`cache_hit`) dicatat Device Manager bila backend melaporkan `compile_ms`
+- [x] Unit test dengan `openvino_genai` palsu (`tests/unit/runtime/test_ov_diffusion.py`)
+- [x] Test hardware `@pytest.mark.npu` (`tests/hardware/test_sd_npu.py`, `pytest --hardware`):
+      deterministik 25 step, image-to-image, cancel, compile dari cache — lulus di NPU nyata
+- [x] Pembaruan `docs/hardware.md` (FP16 vs INT8, compile dengan/tanpa cache, kombinasi device)
 
 ## Acceptance Criteria
 1. SD v1.5 512×512, 25 step, text-to-image dan image-to-image berjalan di `NPU` (atau kombinasi

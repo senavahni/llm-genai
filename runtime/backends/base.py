@@ -31,6 +31,7 @@ class ImageResult:
     seed: int
     steps: int
     guidance_scale: float
+    warnings: tuple[str, ...] = ()  # mis. prompt dipotong ke 77 token CLIP
 
 
 class LocalBackend(ABC):
