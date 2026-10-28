@@ -41,6 +41,10 @@ class Settings(BaseSettings):
     sse_heartbeat_s: float = 15.0  # komentar `: ping` saat stream diam; 0 = mati
     provider_health_timeout_s: float = 5.0
     first_token_timeout_s: float = 60.0  # stream provider remote: batas tunggu chunk pertama
+    # retensi (TASK-19); usage_daily tidak pernah dihapus
+    request_retention_days: int = 180
+    audit_retention_days: int = 730
+    runtime_event_retention_days: int = 90
 
     # --- Local Runtime (dipakai gateway & runtime) ---
     runtime_host: str = "127.0.0.1"

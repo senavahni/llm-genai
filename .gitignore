@@ -33,3 +33,6 @@ storages/
 # editor
 .vscode/
 .idea/
+
+# backup database (TASK-19)
+backups/

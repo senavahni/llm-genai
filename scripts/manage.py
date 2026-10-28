@@ -6,6 +6,8 @@ python scripts\\manage.py create-project --slug agent-a --name "Agent A" --allow
 python scripts\\manage.py allow-models --project agent-a --patterns "smart,image"
 python scripts\\manage.py create-key --project agent-a --name dev [--scopes chat,models:read]
 python scripts\\manage.py replay-usage
+python scripts\\manage.py retention | export-usage --from .. --to .. --out x.csv
+python scripts\\manage.py verify-models [--quick] | clear-ov-cache --yes
 """
 
 import argparse
@@ -364,6 +366,90 @@ async def cmd_create_key(args: argparse.Namespace) -> None:
     _print_key(full_key)
 
 
+async def cmd_retention(args: argparse.Namespace) -> None:
+    from app.services.maintenance_service import maintenance_service
+
+    result = await maintenance_service.run_retention(include_orphans=not args.no_orphans)
+    for table, count in result["counts"].items():
+        print(f"  {table:<22} {count:>8} dihapus")
+    print(f"retensi selesai dalam {result['duration_ms']} ms")
+
+
+async def cmd_export_usage(args: argparse.Namespace) -> None:
+    import csv
+    from datetime import date
+
+    from app.models import UsageDaily
+
+    start, end = date.fromisoformat(args.date_from), date.fromisoformat(args.date_to)
+    async with SessionLocal() as session:
+        stmt = (
+            select(UsageDaily, Project.slug)
+            .join(Project, Project.id == UsageDaily.project_id)
+            .where(UsageDaily.day >= start, UsageDaily.day <= end)
+            .order_by(UsageDaily.day, Project.slug, UsageDaily.model_alias)
+        )
+        if args.project:
+            stmt = stmt.where(Project.slug == args.project)
+        rows = (await session.execute(stmt)).all()
+    columns = [
+        "day", "project", "model_alias", "provider_code", "request_count", "success_count",
+        "error_count", "prompt_tokens", "completion_tokens", "image_count", "cost_usd",
+    ]  # fmt: skip
+    with open(args.out, "w", newline="", encoding="utf-8") as fh:
+        writer = csv.writer(fh)
+        writer.writerow(columns)
+        for usage, slug in rows:
+            values = [getattr(usage, c) for c in columns[2:]]
+            values[-1] = format(usage.cost_usd.normalize(), "f")  # Decimal tanpa notasi 0E-8
+            writer.writerow([usage.day.isoformat(), slug, *values])
+    print(f"{len(rows)} baris → {args.out}")
+
+
+async def cmd_verify_models(args: argparse.Namespace) -> None:
+    from runtime.core.artifacts import sha256_artifact
+
+    async with SessionLocal() as session:
+        models = (
+            (
+                await session.execute(
+                    select(Model).where(Model.device != "remote", Model.is_enabled.is_(True))
+                )
+            )
+            .scalars()
+            .all()
+        )
+    problems = 0
+    for m in sorted(models, key=lambda x: x.alias):
+        path = Path(m.artifact_path or "")
+        path = path if path.is_absolute() else ROOT / path
+        if not m.artifact_path or not path.exists():
+            print(f"HILANG   {m.alias}: {m.artifact_path}")
+            problems += 1
+            continue
+        if args.quick or not m.artifact_sha256:
+            print(f"ADA      {m.alias}" + ("" if args.quick else " (sha256 belum tercatat)"))
+            continue
+        digest = await asyncio.to_thread(sha256_artifact, path)
+        if digest != m.artifact_sha256:
+            print(f"BERUBAH  {m.alias}: sha256 {digest[:12]}… != katalog {m.artifact_sha256[:12]}…")
+            problems += 1
+        else:
+            print(f"OK       {m.alias}")
+    if problems:
+        raise SystemExit(f"{problems} model bermasalah")
+
+
+async def cmd_clear_ov_cache(args: argparse.Namespace) -> None:
+    from app.services.maintenance_service import clear_ov_cache
+
+    if not args.yes:
+        raise SystemExit(
+            "Compile ulang NPU/GPU memakan waktu (SD ±2 menit). Ulangi dengan --yes untuk lanjut."
+        )
+    print(f"{clear_ov_cache()} file cache dihapus")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="manage.py")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -405,6 +491,25 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--tpm", type=int)
     p.add_argument("--expires-days", type=int)
     p.set_defaults(func=cmd_create_key)
+
+    p = sub.add_parser("retention", help="jalankan retensi data sekarang (TASK-19)")
+    p.add_argument("--no-orphans", action="store_true", help="lewati sapu file gambar yatim")
+    p.set_defaults(func=cmd_retention)
+
+    p = sub.add_parser("export-usage", help="ekspor usage_daily ke CSV")
+    p.add_argument("--from", dest="date_from", required=True, help="YYYY-MM-DD")
+    p.add_argument("--to", dest="date_to", required=True, help="YYYY-MM-DD")
+    p.add_argument("--out", required=True)
+    p.add_argument("--project", help="slug project (opsional)")
+    p.set_defaults(func=cmd_export_usage)
+
+    p = sub.add_parser("verify-models", help="cek artefak model lokal enabled (ada + sha256)")
+    p.add_argument("--quick", action="store_true", help="hanya cek keberadaan (tanpa sha256)")
+    p.set_defaults(func=cmd_verify_models)
+
+    p = sub.add_parser("clear-ov-cache", help="hapus cache compile OpenVINO (manual)")
+    p.add_argument("--yes", action="store_true", help="konfirmasi (compile ulang NPU lama)")
+    p.set_defaults(func=cmd_clear_ov_cache)
     return parser
 
 

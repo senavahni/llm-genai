@@ -44,9 +44,9 @@ for /f %%i in ('"%PY%" -c "import datetime;print(datetime.date.today())"') do se
 - `manage.py export-usage --from 2026-10-01 --to 2026-10-31 --out usage.csv` (dari `usage_daily`).
 
 ## Deliverables
-- [ ] `maintenance_service.py` + jadwal di lifespan
-- [ ] `scripts/backup-db.bat`, perintah CLI `retention`, `export-usage`, `verify-models`, `clear-ov-cache`
-- [ ] `docs/operations.md` (backup, restore, retensi)
+- [x] `maintenance_service.py` + jadwal di lifespan
+- [x] `scripts/backup-db.bat`, perintah CLI `retention`, `export-usage`, `verify-models`, `clear-ov-cache`
+- [x] `docs/operations.md` (backup, restore, retensi)
 
 ## Acceptance Criteria
 1. Payload kedaluwarsa terhapus pada run berikutnya; `usage_daily` tetap utuh.

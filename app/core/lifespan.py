@@ -9,6 +9,7 @@ from app.core.config import Settings
 from app.core.database import dispose_db, init_db
 from app.core.registry import load_registry
 from app.services.key_service import key_service
+from app.services.maintenance_service import retention_forever
 from app.services.ratelimit_service import ratelimit_service
 from app.services.router_service import Router
 from app.services.usage_service import usage_service
@@ -59,6 +60,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     tasks = [
         asyncio.ensure_future(_sweep_orphans_forever()),
         asyncio.ensure_future(_cleanup_ratelimit_forever()),
+        asyncio.ensure_future(retention_forever()),  # 00:30 UTC tiap hari
     ]
     try:
         yield
