@@ -10,6 +10,8 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.coverage
+htmlcov/
 
 # logs
 logs/*
@@ -30,9 +32,17 @@ storages/
 /PRD.md
 /llm_gateway_docs_v2.zip
 
+# contoh klien (TASK-23)
+node_modules/
+examples/js/package-lock.json
+contoh-gambar.png
+
 # editor
 .vscode/
 .idea/
 
 # backup database (TASK-19)
 backups/
+
+# sertifikat & private key TLS Traefik (TASK-22)
+deploy/traefik/certs/

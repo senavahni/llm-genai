@@ -1,0 +1,59 @@
+# Konfigurasi dinamis Traefik (di-reload otomatis saat file berubah).
+# Traefik TIDAK PERNAH merutekan ke Local Runtime (127.0.0.1:8100) — tidak ada service ke sana.
+http:
+  routers:
+    gateway-public:
+      rule: "PathPrefix(`/v1`) || PathPrefix(`/health`)"
+      entryPoints: [web]
+      service: gateway
+      middlewares: [sec-headers, global-ratelimit, body-limit]
+
+    gateway-admin:
+      rule: "PathPrefix(`/admin`) || PathPrefix(`/metrics`) || PathPrefix(`/docs`) || PathPrefix(`/openapi.json`)"
+      entryPoints: [web]
+      service: gateway
+      priority: 100
+      middlewares: [admin-allowlist, sec-headers]
+
+    dashboard:
+      rule: "PathPrefix(`/api`) || PathPrefix(`/dashboard`)"
+      entryPoints: [dashboard]
+      service: api@internal
+
+  middlewares:
+    admin-allowlist:
+      ipAllowList:
+        # tambahkan subnet/IP admin di LAN, mis. "192.168.1.0/24" atau "192.168.1.20/32"
+        sourceRange: ["127.0.0.1/32", "::1/128"]
+    global-ratelimit:
+      rateLimit:
+        average: 50            # req/detik per IP sumber (batas kasar; kuota rinci di gateway)
+        burst: 100
+    body-limit:
+      buffering:
+        maxRequestBodyBytes: 20971520   # 20 MB; respons TIDAK dibuffer (SSE tetap real-time)
+        memRequestBodyBytes: 2097152
+    sec-headers:
+      headers:
+        frameDeny: true
+        contentTypeNosniff: true
+        referrerPolicy: "no-referrer"
+        customResponseHeaders:
+          Server: ""
+
+  services:
+    gateway:
+      loadBalancer:
+        servers:
+          - url: "http://127.0.0.1:8000"
+        passHostHeader: true
+        healthCheck:
+          path: /health/live
+          interval: 10s
+          timeout: 3s
+
+# TLS opsional (sertifikat self-signed, lihat docs/deployment.md):
+# tls:
+#   certificates:
+#     - certFile: deploy/traefik/certs/gateway.crt
+#       keyFile: deploy/traefik/certs/gateway.key

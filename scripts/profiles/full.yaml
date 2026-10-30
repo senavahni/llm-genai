@@ -1,0 +1,35 @@
+# Profil katalog penuh (setelah upgrade RAM, disarankan ≥ 32 GB). Sama dengan route di
+# scripts/seed_models.yaml.
+#   scripts\conda-run.bat python scripts\manage.py apply-profile full
+# Sebelum dipakai: pastikan /health/ready → runtime.system_ram.low = false setelah warmup, lalu
+# jalankan scripts\test-hardware.bat tests\hardware\test_gateway_e2e.py (termasuk uji swap 100×).
+name: full
+
+providers:
+  openvino: {is_enabled: true}
+
+models:
+  local/qwen2.5-7b: {is_enabled: true, is_pinned: false}
+  local/qwen2.5-coder-7b: {is_enabled: true, is_pinned: false}
+  local/sd-1.5: {is_enabled: true, is_pinned: true}
+  local/qwen2.5-coder-1.5b: {is_enabled: true, is_pinned: true}
+  local/qwen2-vl-2b: {is_enabled: true, is_pinned: false}
+
+routes:
+  - alias: fast
+    targets: [{model: local/qwen2.5-7b, priority: 1}, {model: gemini/flash, priority: 2}]
+  - alias: smart
+    targets: [{model: anthropic/claude-sonnet, priority: 1}, {model: openai/gpt-heavy, priority: 2},
+              {model: local/qwen2.5-7b, priority: 3}]
+  - alias: local
+    targets: [{model: local/qwen2.5-7b, priority: 1}, {model: local/qwen2.5-coder-7b, priority: 2}]
+  - alias: code
+    targets: [{model: local/qwen2.5-coder-7b, priority: 1}, {model: anthropic/claude-sonnet, priority: 2},
+              {model: local/qwen2.5-7b, priority: 3}]
+  - alias: autocomplete
+    targets: [{model: local/qwen2.5-coder-1.5b, priority: 1}]
+  - alias: vision
+    targets: [{model: local/qwen2-vl-2b, priority: 1}, {model: openai/gpt-light, priority: 2}]
+  - alias: image
+    is_enabled: true
+    targets: [{model: local/sd-1.5, priority: 1}]

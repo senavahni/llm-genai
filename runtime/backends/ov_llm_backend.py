@@ -251,7 +251,8 @@ class OVLLMBackend(LocalBackend):
         return "".join(parts)
 
     # ---------------------------------------------------------- persiapan
-    def prepare_chat(self, req: dict[str, Any]) -> Prepared:
+    def request_tools(self, req: dict[str, Any]) -> list[dict[str, Any]] | None:
+        """Tools efektif request (None = tanpa tools); validasi kapabilitas & tool_choice."""
         tools = req.get("tools") or None
         if tools and not self.spec.supports_tools:
             raise CapabilityNotSupported(f"{self.spec.alias} tidak mendukung tools")
@@ -260,14 +261,15 @@ class OVLLMBackend(LocalBackend):
             raise UnsupportedParameter(
                 "tool_choice hanya 'auto'/'none' untuk model lokal", param="tool_choice"
             )
-        if req.get("tool_choice") == "none":
-            tools = None
+        return None if req.get("tool_choice") == "none" else tools
+
+    def prepare_chat(self, req: dict[str, Any]) -> Prepared:
+        tools = self.request_tools(req)
         messages = self.chat_messages(req)
         prompt = str(self._tok.apply_chat_template(messages, True, tools=tools))
         prompt_tokens = self.count_tokens(prompt)
         self._check_prompt(prompt_tokens)
         cfg, max_new, warnings = self.generation_config(req, prompt_tokens)
-        names = frozenset(str((t.get("function") or {}).get("name")) for t in tools or [])
         return Prepared(
             inputs=prompt,
             config=cfg,
@@ -275,7 +277,7 @@ class OVLLMBackend(LocalBackend):
             max_new_tokens=max_new,
             tools=bool(tools),
             warnings=warnings,
-            tool_names=names,
+            tool_names=tool_names(tools),
         )
 
     def prepare_completion(self, req: dict[str, Any]) -> Prepared:
@@ -631,6 +633,10 @@ class OVLLMBackend(LocalBackend):
         yield chunk(
             "", self._finish(result, prep, completion), usage=usage, _warnings=prep.warnings
         )
+
+
+def tool_names(tools: list[dict[str, Any]] | None) -> frozenset[str]:
+    return frozenset(str((t.get("function") or {}).get("name")) for t in tools or [])
 
 
 def _tool_call_for_template(call: dict[str, Any]) -> dict[str, Any]:

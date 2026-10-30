@@ -77,3 +77,20 @@ def test_two_calls_and_broken_or_unclosed_blocks():
     assert calls == [] and content == "<tool_call>{rusak</tool_call>"
     content, calls, _ = _run(['<tool_call>{"name": "f"'])  # stream terputus
     assert calls == [] and content == '<tool_call>{"name": "f"'
+
+
+@pytest.mark.parametrize("size", [1, 5, 1000])
+def test_unclosed_block_with_complete_json_is_tool_call(size):
+    """Qwen2-VL kadang berhenti sebelum `</tool_call>`; arguments berupa string JSON."""
+    text = '<tool_call>\n{"name": "f", "arguments": "{\\"x\\": 5}"}\n'
+    parser = StreamToolParser({"f"})
+    pieces = [text[i : i + size] for i in range(0, len(text), size)]
+    events = [e for p in pieces for e in parser.feed(p)] + parser.finish()
+    calls = [v for k, v in events if k == "tool_call"]
+    assert [k for k, _ in events] == ["tool_call"]
+    assert json.loads(calls[0]["function"]["arguments"]) == {"x": 5}
+    # JSON terpotong / nama bukan tool caller → tetap teks
+    for bad in ('<tool_call>{"name": "f", "argu', '<tool_call>{"name": "g", "arguments": {}}'):
+        parser = StreamToolParser({"f"})
+        events = parser.feed(bad) + parser.finish()
+        assert "".join(v for k, v in events if k == "content") == bad

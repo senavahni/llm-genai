@@ -1,95 +1,143 @@
 # llm_gateway
 
-Gateway API LLM yang kompatibel dengan OpenAI: remote provider (OpenAI, Anthropic, Gemini) dan
-model lokal Qwen + Stable Diffusion v1.5 di GPU/NPU Intel (OpenVINO lewat proses Local Runtime,
-tanpa inferensi CPU).
-Spesifikasi lengkap: [llm_gateway_docs_v2/docs/PRD.md](llm_gateway_docs_v2/docs/PRD.md),
-task: [llm_gateway_docs_v2/tasks/](llm_gateway_docs_v2/tasks/).
+Gateway API LLM **kompatibel OpenAI** untuk banyak project/agent di satu mesin Windows:
 
-Status:
-- **M1 Fondasi** (TASK-01 – 05) selesai: skeleton, config, error, logging, DB + migrasi + seed,
-  autentikasi API key.
-- **M2 Provider Remote** (TASK-06 – 08) selesai: schema unified, registry, util SSE, adapter
-  OpenAI, Anthropic, Gemini (diuji dengan mock HTTP; smoke test dengan key asli belum).
-- **M3 Local Runtime**: TASK-09 (probe, unduh/konversi OpenVINO IR, ukur, smoke test; lihat
-  [docs/hardware.md](docs/hardware.md)). TASK-10 selesai: proses runtime + Device Manager +
-  adapter gateway. Backend nyata OpenVINO GenAI = TASK-11 (Qwen) / TASK-12 (SD).
+- **Provider remote**: OpenAI, Anthropic, Gemini, plus **API pihak ketiga berapa pun**
+  (DeepSeek, Groq, OpenRouter, Mistral, Ollama/vLLM di LAN, ...) yang ditambahkan lewat Admin API
+  dengan adapter OpenAI/Anthropic/Gemini-compatible tanpa ubah kode (key di `.env`).
+- **Model lokal** di iGPU + NPU Intel lewat **OpenVINO** (proses Local Runtime terpisah), tanpa
+  inferensi CPU: Qwen2.5-7B, Qwen2.5-Coder-7B, Qwen2.5-Coder-1.5B (FIM), Qwen2-VL-2B (vision),
+  Stable Diffusion v1.5 (text→image, image→image).
+- **Route** (`smart`, `fast`, `code`, `autocomplete`, `vision`, `image`, ...) dengan fallback
+  otomatis, circuit breaker, dan antrean/swap model lokal per device.
+- **API key per project**, pola model yang diizinkan, rate limit RPM/TPM, kuota harian/bulanan,
+  pencatatan token & biaya per request ke PostgreSQL, Admin API + audit log, metrics Prometheus.
 
-## Lingkungan
+Tanpa hak admin, tanpa Docker: conda env + PostgreSQL portable (+ Traefik portable opsional).
+
+> **Status (30 Okt 2026): profil `remote-only`.** Semua model lokal dinonaktifkan sementara agar
+> mesin ringan (file & cache tetap ada); jalankan dengan `scripts\start-all.bat --no-runtime`.
+> Aktifkan kembali dengan `manage.py apply-profile ram16` / `full` (lihat
+> [docs/model-catalog.md](docs/model-catalog.md#profil-operasional)).
+Spesifikasi: [PRD](llm_gateway_docs_v2/docs/PRD.md) · task: [llm_gateway_docs_v2/tasks/](llm_gateway_docs_v2/tasks/).
+
+```
+Client ──► [Traefik :8080, opsional] ──► gateway :8000 ──┬─► OpenAI / Anthropic / Gemini
+                                                        ├─► PostgreSQL :5432
+                                                        └─► Local Runtime 127.0.0.1:8100
+                                                             ├─ iGPU: Qwen 7B / VL (swap)
+                                                             └─ NPU: Coder-1.5B, SD v1.5 (pinned)
+```
+
+## Dokumentasi
+
+| Dokumen | Isi |
+|---|---|
+| [docs/client-integration.md](docs/client-integration.md) | **memakai gateway dari project lain**: SDK Python/JS, curl, LangChain, LlamaIndex, Continue, Cline, Aider, Open WebUI, Cursor, error & retry |
+| [docs/model-catalog.md](docs/model-catalog.md) | model lokal & remote, lisensi, route, memilih model, menambah model |
+| [docs/deployment.md](docs/deployment.md) | Mode A (tanpa Traefik) & Mode B (Traefik), start/stop, autostart |
+| [docs/operations.md](docs/operations.md) | log, backup/restore, retensi, rotasi key, troubleshooting |
+| [docs/admin-api.http](docs/admin-api.http) | koleksi request Admin API (project, key, kuota, model, route, laporan) |
+| [docs/database.md](docs/database.md) | ERD, arti tabel, query siap pakai |
+| [docs/hardware.md](docs/hardware.md) | probe device, keputusan backend, pengukuran memori |
+| [docs/perf-report.md](docs/perf-report.md) | load test, benchmark lokal (NF1–NF11), deviasi |
+| [CHANGELOG.md](CHANGELOG.md) | riwayat versi |
+
+## Prasyarat
 
 | Komponen | Nilai |
 |---|---|
-| Python | **3.11.17** (conda env `llm-genai`, `D:\Data.Fahrul\.conda\envs\llm-genai`). Perintah lewat `scripts\conda-run.bat` (aktivasi Miniconda + env). |
-| PostgreSQL | portable 18.x, `D:\Data.Fahrul\Documents\PortableDev\start-postgres.bat` |
-| OS | Windows tanpa admin, tanpa Docker |
+| OS | Windows 10/11 64-bit, akun biasa (tanpa admin) |
+| Hardware | Intel Core Ultra (iGPU Intel Arc/Graphics + NPU Intel AI Boost) dengan driver GPU & NPU terbaru; **RAM ≥ 16 GB** (GPU/NPU memakai RAM sistem, lihat [perf-report](docs/perf-report.md#ram-sistem)); disk kosong **≥ 40 GB** (model ±12 GB + cache compile ±12 GB) |
+| Python | conda env Python 3.11 (`D:\Data.Fahrul\.conda\envs\llm-genai`; ubah `CONDA_ENV` di `scripts\env.bat`) |
+| PostgreSQL | portable ≥ 14 (terpasang 18.x di `PortableDev\postgres`) |
+| Git | Git portable (`PortableDev\Git`, juga menyediakan `openssl.exe` untuk TLS) |
+| Traefik | opsional, v3 portable (`PortableDev\traefik\traefik.exe`), Mode B |
 
-## Setup pertama kali
+## Quick start (dari nol)
 
-1. Dependency (Conda Prompt): `conda activate llm-genai` lalu `pip install -r requirements.txt`
-   (versi persis di `requirements.lock.txt`).
-2. Salin `.env.example` → `.env` dan ganti semua `CHANGE_ME`. `GATEWAY_KEY_PEPPER` dan
-   `RUNTIME_TOKEN` minimal 32 karakter:
-   `python -c "import secrets; print(secrets.token_urlsafe(48))"`.
-   Jangan menaruh komentar di akhir baris nilai, karena `scripts\env.bat` membaca `.env` per baris.
-3. Database (sekali saja, sebagai superuser `postgres`):
-   ```bat
-   psql -h 127.0.0.1 -U postgres -c "CREATE ROLE llm_gateway LOGIN PASSWORD '...';"
-   psql -h 127.0.0.1 -U postgres -c "CREATE DATABASE llm_gateway OWNER llm_gateway ENCODING 'UTF8';"
-   psql -h 127.0.0.1 -U postgres -c "CREATE DATABASE llm_gateway_test OWNER llm_gateway ENCODING 'UTF8';"
-   ```
-4. `scripts\start-postgres.bat` → `scripts\migrate.bat` → `"%PY%" scripts\manage.py seed`
-5. Admin key bootstrap: `"%PY%" scripts\manage.py create-admin-key --name bootstrap`
-   (key hanya ditampilkan sekali).
+```bat
+:: 1. clone (Git portable: git-cmd.exe)
+git clone <repo> llm-genai && cd llm-genai
 
-## Menjalankan
+:: 2. dependency (Conda Prompt)
+conda activate llm-genai
+pip install -r requirements.txt -r requirements-local.txt
+:: torch CPU hanya untuk konversi model (bukan inferensi):
+pip install torch --index-url https://download.pytorch.org/whl/cpu
+
+:: 3. konfigurasi: salin lalu isi semua CHANGE_ME (pepper & runtime token >= 32 karakter acak:
+::    python -c "import secrets; print(secrets.token_urlsafe(48))")
+copy .env.example .env
+
+:: 4. database (sekali, sebagai superuser postgres)
+psql -h 127.0.0.1 -U postgres -c "CREATE ROLE llm_gateway LOGIN PASSWORD '...';"
+psql -h 127.0.0.1 -U postgres -c "CREATE DATABASE llm_gateway OWNER llm_gateway ENCODING 'UTF8';"
+psql -h 127.0.0.1 -U postgres -c "CREATE DATABASE llm_gateway_test OWNER llm_gateway ENCODING 'UTF8';"
+scripts\start-postgres.bat
+scripts\migrate.bat
+scripts\conda-run.bat python scripts\manage.py seed
+
+:: 5. model lokal (±1 jam; lihat docs\model-catalog.md & docs\hardware.md)
+scripts\conda-run.bat python scripts\probe_devices.py
+scripts\conda-run.bat python scripts\download_models.py --write-yaml
+scripts\conda-run.bat python scripts\convert_openvino.py --write-yaml
+scripts\conda-run.bat python scripts\smoke_local.py         :: uji + hangatkan cache compile
+scripts\conda-run.bat python scripts\test_sd.py
+scripts\conda-run.bat python scripts\measure_models.py --update-yaml
+scripts\conda-run.bat python scripts\manage.py seed --update-local
+
+:: 6. admin key (tampil sekali) lalu jalankan semuanya
+scripts\conda-run.bat python scripts\manage.py create-admin-key --name ops
+scripts\start-all.bat
+```
+
+Buat project + key untuk klien lewat Admin API ([docs/admin-api.http](docs/admin-api.http)) atau CLI:
+```bat
+scripts\conda-run.bat python scripts\manage.py create-project --slug agent-a --name "Agent A" --allow "smart,fast,code,autocomplete,vision,image"
+scripts\conda-run.bat python scripts\manage.py create-key --project agent-a --name dev
+```
+Lalu ikuti [docs/client-integration.md](docs/client-integration.md).
+
+## Script
 
 | Script | Fungsi |
 |---|---|
-| `scripts\env.bat` | PATH DLL conda + variabel `.env`, tanpa `conda activate` |
-| `scripts\start-postgres.bat` | start PostgreSQL portable, tunggu port 5432 |
-| `scripts\migrate.bat` | `alembic upgrade head` |
-| `scripts\start-gateway.bat` | uvicorn `127.0.0.1:8000` (dev, `--reload`) |
-| `scripts\start-runtime.bat` | Local Runtime `127.0.0.1:8100` dengan supervisor (restart bila crash, maks 5x beruntun; log `logs\runtime-supervisor.log`) |
+| `scripts\start-all.bat [--lan] [--no-runtime]` | PostgreSQL → migrasi → verifikasi model → runtime → gateway (Mode A) |
+| `scripts\start-all-traefik.bat` | sama, gateway `--behind-proxy` + Traefik :8080 (Mode B) |
+| `scripts\stop-all.bat [--keep-db]` | Traefik → gateway → runtime (unload rapi) → PostgreSQL |
+| `scripts\start-gateway.bat [--lan\|--behind-proxy\|--reload]` | gateway saja (`run_server.py`, 1 worker) |
+| `scripts\start-runtime.bat` | Local Runtime + supervisor restart |
+| `scripts\start-traefik.bat` | Traefik portable |
+| `scripts\start-postgres.bat`, `scripts\migrate.bat` | PostgreSQL portable, `alembic upgrade head` |
+| `scripts\backup-db.bat [--verify]` | `pg_dump` ke `backups\` (7 terakhir) |
+| `scripts\check.bat` | ruff, format, mypy, pytest + coverage ≥ 70%, secret scan |
+| `scripts\test.bat [args]` | pytest (unit + integrasi + contract; `--load`, `--live` opsional) |
+| `scripts\test-hardware.bat [file]` | test model nyata di GPU/NPU (manual, mesin target) |
+| `scripts\bench.bat` | benchmark model lokal → `docs\perf-report.md` |
+| `scripts\conda-run.bat <cmd>` | jalankan perintah di conda env (dengan `.env`) |
+| `scripts\env.bat` | dipanggil semua script: PATH DLL conda + variabel `.env` |
 
-- Gateway: `GET /health/live`, `GET /health/ready` (`ok` / `degraded` bila ada provider mati,
-  503 bila DB mati). Swagger di `/docs` (hanya bila `APP_ENV=dev` atau `ENABLE_DOCS=true`).
-- Runtime (header `X-Runtime-Token` = `RUNTIME_TOKEN`): `/v1/chat/completions`, `/v1/completions`,
-  `/v1/images/generations`, `/v1/images/edits` (image-to-image, body JSON + `image` base64),
-  `GET /runtime/status`,
-  `POST /runtime/models/{name}/load?pin=true` · `/unload`, `POST /runtime/catalog/reload`,
-  `POST /runtime/shutdown`; tanpa token: `/health/live`, `/health/ready`.
-- Provider remote tanpa API key di `.env` otomatis dinonaktifkan (WARNING di log), tidak crash.
-- Log JSON: `logs\app.log`, `logs\error.log`, `logs\access.log`, `logs\runtime.log`,
-  `logs\runtime-error.log` (rotasi harian, UTC).
+CLI `scripts\manage.py`: `seed [--update-local]`, `apply-profile <remote-only|ram16|full>`,
+`create-admin-key`, `create-project`,
+`allow-models`, `create-key`, `replay-usage`, `retention`, `export-usage`, `verify-models`,
+`clear-ov-cache` (`--help` per perintah).
 
-## Model lokal (TASK-09)
+## Endpoint
 
-```bat
-scripts\conda-run.bat python scripts\probe_devices.py                 :: GPU/NPU/RAM → logs\device_probe.json
-scripts\conda-run.bat python scripts\download_models.py --write-yaml  :: IR siap pakai (Qwen2.5 7B) + sha256
-scripts\conda-run.bat python scripts\convert_openvino.py --write-yaml :: SD v1.5, Qwen2-VL-2B, Coder-1.5B (NPU)
-scripts\conda-run.bat python scripts\test_sd.py                       :: SD t2i + i2i di NPU
-scripts\conda-run.bat python scripts\measure_models.py --update-yaml  :: ukur vram_mb, cpu_ratio, budget
-scripts\conda-run.bat python scripts\smoke_local.py                   :: uji kualitas → docs\smoke\
-scripts\conda-run.bat python scripts\manage.py seed --update-local    :: sinkron ke DB
-```
-Akselerator: `requirements-local.txt` (openvino + openvino-genai, satu versi).
+| Path | Akses |
+|---|---|
+| `/v1/chat/completions`, `/v1/completions`, `/v1/embeddings`, `/v1/images/generations`, `/v1/images/edits`, `/v1/images/files/...`, `/v1/models`, `/v1/usage` | key client |
+| `/admin/*` (project, key, kuota, provider, model, route, requests, usage, audit, runtime, maintenance) | key admin |
+| `/health/live`, `/health/ready` | publik (detail hanya dari localhost / key admin) |
+| `/metrics` | localhost atau key admin |
+| `/docs` | hanya `APP_ENV=dev` atau `ENABLE_DOCS=true` |
 
-## CLI (`scripts\manage.py`)
-
-```bat
-call scripts\env.bat
-"%PY%" scripts\manage.py seed                      :: idempoten: 4 provider, 5 model lokal, 8 route
-"%PY%" scripts\manage.py seed --update-local       :: samakan model lokal dengan yaml, nonaktifkan yang dihapus (+ audit log)
-"%PY%" scripts\manage.py create-project --slug agent-a --name "Agent A"
-"%PY%" scripts\manage.py create-key --project agent-a --name dev --scopes chat,models:read
-```
-
-## Test & kualitas
+## Pengembangan
 
 ```bat
-call scripts\env.bat
-"%PY%" -m pytest           :: test integrasi memakai DB llm_gateway_test (dimigrasi ulang otomatis)
-"%PY%" -m ruff check .
-"%PY%" -m mypy app
+scripts\check.bat                         :: gerbang kualitas lengkap (PostgreSQL harus hidup)
+scripts\test.bat tests\unit -q
+scripts\start-gateway.bat --reload        :: dev
 ```
+Test integrasi memakai DB `llm_gateway_test` (dimigrasi ulang otomatis tiap sesi).

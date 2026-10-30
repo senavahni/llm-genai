@@ -91,6 +91,8 @@ class HealthService:
         section: dict[str, Any] = {"ok": ok, "devices": devices, "pinned_loaded": pinned}
         if extra.get("progress"):
             section["progress"] = extra["progress"]
+        if memory.get("system"):
+            section["system_ram"] = memory["system"]  # informasi; tidak memengaruhi `ok`
         if not info.get("ok") and info.get("detail"):
             section["detail"] = info["detail"]
         return section

@@ -8,12 +8,13 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.config import get_settings
+from app.core.config import get_settings, valid_provider_key_env
 from app.models import Model, ModelRoute, ModelRouteTarget, Provider
 from app.schemas.admin import (
     ModelCreate,
     ModelOut,
     ModelUpdate,
+    ProviderCreate,
     ProviderOut,
     ProviderUpdate,
     RouteCreate,
@@ -150,6 +151,96 @@ async def list_providers(session: AsyncSession) -> list[dict[str, Any]]:
     return [snapshot(ProviderOut, p) for p in rows]
 
 
+# header yang membawa kredensial tidak boleh disimpan di DB (pakai api_key_env)
+_SECRET_HEADERS = frozenset(
+    {"authorization", "proxy-authorization", "x-api-key", "api-key", "cookie"}
+)
+
+
+def _validate_remote_provider(api_key_env: str | None, config: dict[str, Any]) -> None:
+    from app.core.registry import REMOTE_ADAPTERS
+
+    adapter = config.get("adapter")
+    if adapter is not None and adapter not in REMOTE_ADAPTERS:
+        raise Unprocessable(
+            f"adapter '{adapter}' tidak dikenal (pilihan: {', '.join(REMOTE_ADAPTERS)})",
+            param="config.adapter",
+        )
+    if config.get("auth") not in (None, "none"):
+        raise Unprocessable("config.auth hanya boleh 'none' (tanpa API key)", param="config.auth")
+    if config.get("auth") != "none" and not valid_provider_key_env(api_key_env):
+        raise Unprocessable(
+            "api_key_env wajib berupa NAMA env berpola NAMA_API_KEY (mis. DEEPSEEK_API_KEY); "
+            "nilainya diisi di .env, bukan dikirim ke API",
+            param="api_key_env",
+        )
+    headers = config.get("headers") or {}
+    if not isinstance(headers, dict) or not all(
+        isinstance(k, str) and isinstance(v, str) for k, v in headers.items()
+    ):
+        raise Unprocessable("config.headers harus objek string → string", param="config.headers")
+    secret = sorted(k for k in headers if k.lower() in _SECRET_HEADERS)
+    if secret:
+        raise Unprocessable(
+            f"header kredensial {secret} tidak boleh disimpan; gunakan api_key_env",
+            param="config.headers",
+        )
+
+
+async def create_provider(
+    session: AsyncSession, actor: Actor, body: ProviderCreate, registry: "ProviderRegistry | None"
+) -> dict[str, Any]:
+    exists = await session.scalar(select(Provider.id).where(Provider.code == body.code))
+    if exists is not None:
+        raise Conflict(f"Provider '{body.code}' sudah ada", param="code")
+    config = {**body.config, "adapter": body.adapter}
+    _validate_remote_provider(body.api_key_env, config)
+    provider = Provider(
+        code=body.code,
+        kind="remote",
+        display_name=body.display_name,
+        base_url=body.base_url,
+        api_key_env=body.api_key_env,
+        timeout_seconds=body.timeout_seconds,
+        max_concurrency=body.max_concurrency,
+        is_enabled=body.is_enabled,
+        config=config,
+    )
+    session.add(provider)
+    await session.flush()
+    await session.refresh(provider)
+    after = snapshot(ProviderOut, provider)
+    audit_service.record(session, actor, "provider.create", "provider", body.code, None, after)
+    await session.commit()
+    await reload_everything(registry, runtime=False)
+    return after
+
+
+async def delete_provider(
+    session: AsyncSession, actor: Actor, code: str, registry: "ProviderRegistry | None"
+) -> dict[str, Any]:
+    provider = (
+        await session.execute(select(Provider).where(Provider.code == code))
+    ).scalar_one_or_none()
+    if provider is None:
+        raise NotFound(f"Provider '{code}' tidak ditemukan", param="code")
+    if provider.kind != "remote":
+        raise Conflict("Provider lokal (runtime) tidak bisa dihapus; nonaktifkan saja")
+    used = await session.scalar(
+        select(func.count()).select_from(Model).where(Model.provider_id == provider.id)
+    )
+    if used:
+        raise Conflict(
+            f"Provider '{code}' masih dipakai {used} model; hapus/pindahkan modelnya dulu"
+        )
+    before = snapshot(ProviderOut, provider)
+    await session.delete(provider)
+    audit_service.record(session, actor, "provider.delete", "provider", code, before, None)
+    await session.commit()
+    await reload_everything(registry, runtime=False)
+    return {"deleted": code}
+
+
 async def update_provider(
     session: AsyncSession,
     actor: Actor,
@@ -164,8 +255,16 @@ async def update_provider(
     if provider is None:
         raise NotFound(f"Provider '{code}' tidak ditemukan", param="code")
     check_if_match(provider.updated_at, if_match)
+    changes = body.model_dump(exclude_unset=True)
+    if provider.kind == "remote":
+        _validate_remote_provider(
+            changes.get("api_key_env", provider.api_key_env),
+            changes.get("config", provider.config) or {},
+        )
+    elif "api_key_env" in changes:
+        raise Unprocessable("api_key_env provider lokal tidak bisa diubah", param="api_key_env")
     before = snapshot(ProviderOut, provider)
-    for field, value in body.model_dump(exclude_unset=True).items():
+    for field, value in changes.items():
         setattr(provider, field, value)
     await session.flush()
     await session.refresh(provider)

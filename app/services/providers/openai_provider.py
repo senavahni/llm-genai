@@ -58,7 +58,9 @@ class OpenAIProvider(BaseProvider):
         return httpx2.Timeout(float(self.cfg.timeout_seconds), connect=10.0)
 
     def default_headers(self) -> dict[str, str]:
-        return {}
+        # header statis non-secret per provider (mis. OpenRouter: HTTP-Referer, X-Title);
+        # header auth ditolak saat validasi Admin API (secret tidak disimpan di DB)
+        return {str(k): str(v) for k, v in (self.cfg.config.get("headers") or {}).items()}
 
     def request_headers(self) -> dict[str, str]:
         """Header per request (mis. X-Request-ID untuk runtime lokal)."""

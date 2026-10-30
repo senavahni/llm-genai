@@ -52,7 +52,12 @@ class Capabilities:
 
     def missing(self, m: ModelConfig) -> list[str]:
         out = []
-        if m.model_type != self.model_type:
+        # model chat ber-FIM (mis. Qwen2.5-Coder) juga melayani /v1/completions: satu salinan di
+        # memori untuk chat + autocomplete
+        serves_completion = self.model_type == "completion" and (
+            m.model_type == "chat" and m.supports_fim
+        )
+        if m.model_type != self.model_type and not serves_completion:
             out.append(f"model_type={self.model_type}")
         checks = (
             (self.tools, m.supports_tools, "tools"),

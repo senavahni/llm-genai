@@ -95,7 +95,12 @@ async def health_ready(request: Request) -> JSONResponse:
         "pinned": pinned,
         "warmup_errors": state.warmup_errors,
         "memory": {
-            d: {"used_mb": m.used_mb, "budget_mb": m.budget_mb} for d, m in state.managers.items()
+            **{
+                d: {"used_mb": m.used_mb, "budget_mb": m.budget_mb}
+                for d, m in state.managers.items()
+            },
+            # UMA: GPU/NPU memakai RAM sistem; low=true → load model GPU berisiko gagal
+            "system": state.ram_headroom(),
         },
     }
     return JSONResponse(body, status_code=200 if state.ready else 503)

@@ -4,11 +4,11 @@ rem Maks 5 restart beruntun; penghitung di-reset bila runtime sempat hidup >= 10
 call "%~dp0env.bat"
 set /a N=0
 :loop
-for /f %%t in ('"%PY%" -c "import time;print(int(time.time()))"') do set /a T0=%%t
+for /f %%t in ('call "%PY%" -c "import time;print(int(time.time()))"') do set /a T0=%%t
 "%PY%" scripts\run_runtime.py
 set "RC=%ERRORLEVEL%"
 if "%RC%"=="0" goto :eof
-for /f %%t in ('"%PY%" -c "import time;print(int(time.time()))"') do set /a T1=%%t
+for /f %%t in ('call "%PY%" -c "import time;print(int(time.time()))"') do set /a T1=%%t
 set /a DT=T1-T0
 if %DT% GEQ 600 set /a N=0
 set /a N+=1

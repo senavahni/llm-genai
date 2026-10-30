@@ -9,6 +9,10 @@ line-length = 100
 target-version = "py311"
 extend-exclude = ["llm_gateway_docs_v2", "local_models", "storage", "logs"]
 
+[tool.ruff.format]
+# hasil autogenerate Alembic dibiarkan apa adanya (tetap di-lint)
+exclude = ["migrations/versions/*"]
+
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
 # B008: FastAPI memakai Depends() sebagai default argumen.
@@ -30,8 +34,19 @@ markers = [
     "integration: butuh PostgreSQL (database llm_gateway_test)",
     "gpu: butuh iGPU + model OpenVINO nyata (jalankan dengan --hardware)",
     "npu: butuh NPU + model OpenVINO nyata (jalankan dengan --hardware)",
+    "live: provider remote asli lewat gateway yang berjalan (jalankan dengan --live)",
+    "load: load test overhead gateway (jalankan dengan --load)",
+    "contract: SDK openai resmi ke server uvicorn sungguhan",
 ]
 
 [tool.mypy]
 python_version = "3.11"
 ignore_missing_imports = true
+
+# TASK-20: fungsi wajib bertipe di lapisan service/utils gateway dan seluruh runtime
+[[tool.mypy.overrides]]
+module = ["app.services.*", "app.utils.*", "runtime.*"]
+disallow_untyped_defs = true
+
+[tool.coverage.run]
+omit = ["tests/*", "migrations/*"]

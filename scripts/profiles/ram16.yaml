@@ -1,0 +1,40 @@
+# Profil operasional untuk mesin RAM 16 GB (dipakai sejak 28 Okt 2026).
+#   scripts\conda-run.bat python scripts\manage.py apply-profile ram16
+#
+# GPU/NPU memakai RAM sistem (UMA). Dengan aplikasi lain terbuka, RAM bebas tidak cukup untuk
+# model 7B (±5 GB) + SD (3,3 GB) → load gagal / runtime crash (docs/perf-report.md, "RAM sistem").
+# Aktif hanya: Qwen2.5-Coder-1.5B (NPU, pinned: chat kode + FIM + tools) dan Qwen2-VL-2B (GPU:
+# teks umum + gambar + tools). Model lain DINONAKTIFKAN (bukan dihapus): file model & cache
+# compile OpenVINO tetap di disk; kembali ke katalog penuh = `apply-profile full`.
+name: ram16
+
+providers:
+  openvino: {is_enabled: true}
+
+models:
+  local/qwen2.5-7b: {is_enabled: false}
+  local/qwen2.5-coder-7b: {is_enabled: false}
+  local/sd-1.5: {is_enabled: false}
+  local/qwen2.5-coder-1.5b: {is_enabled: true, is_pinned: true}
+  local/qwen2-vl-2b: {is_enabled: true, is_pinned: false}
+
+# Nama route = kontrak ke klien (tidak berubah); hanya kandidatnya yang disesuaikan.
+# Kandidat remote tetap ada: dilewati otomatis selama key provider kosong.
+routes:
+  - alias: fast
+    targets: [{model: local/qwen2-vl-2b, priority: 1}, {model: gemini/flash, priority: 2}]
+  - alias: smart
+    targets: [{model: anthropic/claude-sonnet, priority: 1}, {model: openai/gpt-heavy, priority: 2},
+              {model: local/qwen2-vl-2b, priority: 3}]
+  - alias: local
+    targets: [{model: local/qwen2-vl-2b, priority: 1}, {model: local/qwen2.5-coder-1.5b, priority: 2}]
+  - alias: code
+    targets: [{model: local/qwen2.5-coder-1.5b, priority: 1}, {model: anthropic/claude-sonnet, priority: 2},
+              {model: local/qwen2-vl-2b, priority: 3}]
+  - alias: autocomplete
+    targets: [{model: local/qwen2.5-coder-1.5b, priority: 1}]
+  - alias: vision
+    targets: [{model: local/qwen2-vl-2b, priority: 1}, {model: openai/gpt-light, priority: 2}]
+  # SD nonaktif: route dimatikan (tidak tampil di /v1/models); target disimpan untuk profil full
+  - alias: image
+    is_enabled: false

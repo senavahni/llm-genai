@@ -9,6 +9,7 @@ import httpx2
 import openai
 import pytest
 import yaml
+from fastapi import FastAPI
 
 from app.core.config import get_settings, load_settings
 from app.core.database import SessionLocal
@@ -64,15 +65,15 @@ class Api:
         )
 
 
-@pytest.fixture
-async def api(db, tmp_path, monkeypatch):
-    monkeypatch.setattr(get_settings(), "storage_dir", str(tmp_path / "storage"))
+FAKE_PROVIDER_ENV = ("OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY")
+
+
+async def build_fake_gateway() -> tuple[FastAPI, dict[str, FakeProvider]]:
+    """Seed katalog ke DB uji + app gateway dengan FakeProvider untuk semua provider.
+    Env key provider (FAKE_PROVIDER_ENV) harus sudah di-set pemanggil."""
     data = yaml.safe_load((ROOT / "scripts" / "seed_models.yaml").read_text(encoding="utf-8"))
     async with SessionLocal() as s:
         await _manage()._seed(s, data, update_local=False)
-    # key palsu (bukan pola secret asli) agar provider remote tidak dinonaktifkan saat reload
-    for env in ("OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY"):
-        monkeypatch.setenv(env, "fake-test-key")
     settings = load_settings()
     app = create_app(settings)
     providers: dict[str, FakeProvider] = {}
@@ -95,6 +96,11 @@ async def api(db, tmp_path, monkeypatch):
     await registry.load()
     app.state.registry = registry
     app.state.router = Router(registry)
+    return app, providers
+
+
+async def default_project_keys() -> tuple[str, str]:
+    """`agent-a` (akses luas) dan `agent-b` (hanya local/* & image)."""
     key = await _project_key(
         "agent-a",
         [
@@ -110,5 +116,16 @@ async def api(db, tmp_path, monkeypatch):
         ],
     )
     other = await _project_key("agent-b", ["local/*", "image"])
+    return key, other
+
+
+@pytest.fixture
+async def api(db, tmp_path, monkeypatch):
+    monkeypatch.setattr(get_settings(), "storage_dir", str(tmp_path / "storage"))
+    # key palsu (bukan pola secret asli) agar provider remote tidak dinonaktifkan saat reload
+    for env in FAKE_PROVIDER_ENV:
+        monkeypatch.setenv(env, "fake-test-key")
+    app, providers = await build_fake_gateway()
+    key, other = await default_project_keys()
     yield Api(app, providers, key, other)
     await drain_finishers()

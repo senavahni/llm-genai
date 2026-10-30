@@ -49,15 +49,24 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         action="store_true",
         help="jalankan test hardware (@pytest.mark.gpu / npu) dengan model nyata di local_models/",
     )
+    parser.addoption(
+        "--live", action="store_true", help="jalankan test provider asli (@pytest.mark.live)"
+    )
+    parser.addoption(
+        "--load", action="store_true", help="jalankan load test (@pytest.mark.load, menit-an)"
+    )
+
+
+# marker -> opsi CLI yang mengaktifkannya; tanpa opsi, test dengan marker tsb di-skip
+_OPT_IN = {"gpu": "--hardware", "npu": "--hardware", "live": "--live", "load": "--load"}
 
 
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
-    if config.getoption("--hardware"):
-        return
-    skip = pytest.mark.skip(reason="test hardware: jalankan dengan --hardware")
     for item in items:
-        if "gpu" in item.keywords or "npu" in item.keywords:
-            item.add_marker(skip)
+        for marker, option in _OPT_IN.items():
+            if marker in item.keywords and not config.getoption(option):
+                item.add_marker(pytest.mark.skip(reason=f"jalankan dengan {option}"))
+                break
 
 
 def _db_reachable() -> bool:

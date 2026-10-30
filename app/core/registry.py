@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.config import Settings
+from app.core.config import Settings, valid_provider_key_env
 from app.core.database import SessionLocal
 from app.models import Model, ModelRoute, ModelRouteTarget, Provider
 from app.schemas.catalog import ModelConfig, ProviderConfig, RouteConfig
@@ -26,12 +26,24 @@ if TYPE_CHECKING:
 
 log = get_logger(__name__)
 
+# Adapter = format API upstream. Provider custom (DeepSeek, Groq, OpenRouter, Mistral, Ollama, ...)
+# memilih salah satu lewat `providers.config.adapter`; tanpa itu adapter = kode provider (bawaan).
 PROVIDER_CLASSES: dict[str, type[BaseProvider]] = {
     "openai": OpenAIProvider,
     "anthropic": AnthropicProvider,
     "gemini": GeminiProvider,
     "openvino": LocalRuntimeProvider,
 }
+REMOTE_ADAPTERS = ("openai", "anthropic", "gemini")
+
+
+def adapter_of(cfg: ProviderConfig) -> str:
+    return str(cfg.config.get("adapter") or cfg.code)
+
+
+def keyless(cfg: ProviderConfig) -> bool:
+    """Provider remote tanpa API key (mis. Ollama/vLLM di LAN): `config.auth = "none"`."""
+    return cfg.config.get("auth") == "none"
 
 
 class ModelCatalog:
@@ -126,7 +138,7 @@ class ProviderRegistry:
             if current is not None and current.cfg == cfg:
                 new[code] = current  # konfigurasi sama: pakai ulang instance (& semaphore)
                 continue
-            provider = self._classes[code](cfg, self.http, self.settings)
+            provider = self._class_for(cfg)(cfg, self.http, self.settings)  # type: ignore[misc]
             await provider.startup()
             new[code] = provider
         for code, old in self.providers.items():
@@ -138,12 +150,22 @@ class ProviderRegistry:
                 getattr(log, level)("provider_disabled", provider=code, reason=reason)
         self.providers, self.provider_configs, self.disabled = new, configs, disabled
 
+    def _class_for(self, cfg: ProviderConfig) -> type[BaseProvider] | None:
+        # kode dulu (bawaan / factory test), lalu adapter (provider custom)
+        return self._classes.get(cfg.code) or self._classes.get(adapter_of(cfg))
+
     def _disabled_reason(self, cfg: ProviderConfig) -> str | None:
         if not cfg.is_enabled:
             return "disabled di DB"
-        if cfg.code not in self._classes:
-            return f"tidak ada adapter untuk provider '{cfg.code}'"
-        if cfg.kind == "remote" and not self.settings.provider_secret(cfg.api_key_env):
+        if self._class_for(cfg) is None:
+            return (
+                f"adapter '{adapter_of(cfg)}' tidak dikenal (pilihan: {', '.join(REMOTE_ADAPTERS)})"
+            )
+        if cfg.kind != "remote" or keyless(cfg):
+            return None
+        if not valid_provider_key_env(cfg.api_key_env):
+            return f"api_key_env '{cfg.api_key_env}' tidak valid (harus berpola NAMA_API_KEY)"
+        if not self.settings.provider_secret(cfg.api_key_env):
             return f"API key kosong ({cfg.api_key_env} tidak diisi di .env)"
         return None
 

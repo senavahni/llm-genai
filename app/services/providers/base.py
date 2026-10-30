@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 import httpx2
 
+from app.core.config import valid_provider_key_env
 from app.schemas.catalog import ModelConfig, ProviderConfig
 from app.schemas.unified import (
     ProviderHealth,
@@ -43,6 +44,8 @@ class BaseProvider(ABC):
 
     @property
     def api_key(self) -> str | None:
+        if self.cfg.kind == "remote" and not valid_provider_key_env(self.cfg.api_key_env):
+            return None  # pertahanan berlapis: registry juga menonaktifkan provider ini
         return self.settings.provider_secret(self.cfg.api_key_env)
 
     async def startup(self) -> None:  # noqa: B027 - opsional

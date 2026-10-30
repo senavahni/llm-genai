@@ -97,6 +97,58 @@ Content-Type: application/json
 POST {{base}}/admin/providers/openvino/test
 Authorization: Bearer {{admin}}
 
+### Provider API pihak ketiga (OpenAI-compatible). Isi DEEPSEEK_API_KEY=... di .env lalu restart.
+POST {{base}}/admin/providers
+Authorization: Bearer {{admin}}
+Content-Type: application/json
+
+{
+  "code": "deepseek",
+  "display_name": "DeepSeek",
+  "adapter": "openai",
+  "base_url": "https://api.deepseek.com/v1",
+  "api_key_env": "DEEPSEEK_API_KEY"
+}
+
+### Provider tanpa API key (Ollama / vLLM di LAN)
+POST {{base}}/admin/providers
+Authorization: Bearer {{admin}}
+Content-Type: application/json
+
+{
+  "code": "ollama-lan",
+  "display_name": "Ollama LAN",
+  "adapter": "openai",
+  "base_url": "http://192.168.1.50:11434/v1",
+  "config": {"auth": "none"}
+}
+
+### Model di provider custom (alias <provider>/<nama>; harga USD per 1 juta token = CONTOH,
+### cek nama model & harga terbaru di dokumentasi provider)
+POST {{base}}/admin/models
+Authorization: Bearer {{admin}}
+Content-Type: application/json
+
+{
+  "alias": "deepseek/chat",
+  "provider": "deepseek",
+  "upstream_name": "deepseek-chat",
+  "model_type": "chat",
+  "tier": "light",
+  "supports_tools": true,
+  "supports_json_mode": true,
+  "input_cost_per_mtok": "0.27",
+  "output_cost_per_mtok": "1.10"
+}
+
+### Uji koneksi provider custom
+POST {{base}}/admin/providers/deepseek/test
+Authorization: Bearer {{admin}}
+
+### Hapus provider (409 bila masih punya model)
+DELETE {{base}}/admin/providers/ollama-lan
+Authorization: Bearer {{admin}}
+
 ### ---------------------------------------------------------------- models
 GET {{base}}/admin/models
 Authorization: Bearer {{admin}}

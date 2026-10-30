@@ -235,6 +235,7 @@ class VLMPipeline(LLMPipeline):
         self, history: Any, images: Any = None, generation_config: Any = None, streamer: Any = None
     ) -> Any:
         self.last_images = images
+        self.last_history = [dict(m) for m in history]
         return super().generate(
             ["".join(str(m.get("content")) for m in history)], generation_config, streamer
         )

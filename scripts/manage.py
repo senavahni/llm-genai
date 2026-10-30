@@ -1,6 +1,7 @@
 """CLI operasional gateway.
 
 python scripts\\manage.py seed [--update-local]
+python scripts\\manage.py apply-profile ram16       :: profil operasional (scripts/profiles/)
 python scripts\\manage.py create-admin-key --name bootstrap
 python scripts\\manage.py create-project --slug agent-a --name "Agent A" --allow "smart,local/*"
 python scripts\\manage.py allow-models --project agent-a --patterns "smart,image"
@@ -69,9 +70,10 @@ _LOCAL_UPDATE_FIELDS = (
     "config",
 )
 # default kolom bila kunci tidak ada di yaml (agar sinkron = isi yaml, bukan sisa nilai lama)
+# (is_enabled sengaja tidak di sini: status aktif = state operasional dari profil / Admin API,
+# hanya diubah --update-local bila ditulis eksplisit di yaml)
 _LOCAL_DEFAULTS: dict[str, Any] = {
     "is_pinned": False,
-    "is_enabled": True,
     "supports_streaming": True,
     "supports_tools": False,
     "supports_vision": False,
@@ -172,6 +174,9 @@ async def _update_local(
         ).scalar_one()
         before = {f: getattr(model, f) for f in _LOCAL_UPDATE_FIELDS}
         after = {f: desired.get(f, before[f]) for f in _LOCAL_UPDATE_FIELDS}
+        if before["runtime_backend"] == "retired" and "is_enabled" not in item:
+            # migrasi 0002: model katalog lama yang kembali dengan backend nyata → aktifkan
+            after["is_enabled"] = True
         if _audit_change(session, model, before, after, "model.update_local"):
             changed += 1
     stale = (
@@ -298,6 +303,155 @@ async def cmd_create_project(args: argparse.Namespace) -> None:
         print(f"project dibuat: id={project.id} slug={project.slug} allow={patterns or '-'}")
     if not patterns:
         print("PERINGATAN: tanpa pola model, semua request project ini ditolak (allow-models).")
+
+
+# kolom model yang boleh diatur profil (state operasional, bukan fakta model)
+_PROFILE_MODEL_FIELDS = ("is_enabled", "is_pinned")
+
+
+async def _apply_profile(session: AsyncSession, profile: dict[str, Any]) -> int:
+    """Terapkan profil operasional (model aktif/pinned + route) dalam SATU transaksi, setiap
+    perubahan dicatat di audit_logs. Validasi semua dulu; error → tidak ada yang berubah."""
+    name = profile.get("name", "?")
+    models = {m.alias: m for m in (await session.execute(select(Model))).scalars()}
+    wanted_models: dict[str, dict[str, Any]] = profile.get("models") or {}
+    for alias, values in wanted_models.items():
+        if alias not in models:
+            raise SystemExit(f"profil {name}: model '{alias}' tidak ada di DB (jalankan seed)")
+        bad = set(values) - set(_PROFILE_MODEL_FIELDS)
+        if bad:
+            raise SystemExit(f"profil {name}: field {sorted(bad)} tidak boleh diatur profil")
+
+    def enabled_after(alias: str) -> bool:
+        return bool(wanted_models.get(alias, {}).get("is_enabled", models[alias].is_enabled))
+
+    routes = {r.alias: r for r in (await session.execute(select(ModelRoute))).scalars()}
+    for r in profile.get("routes") or []:
+        if r["alias"] not in routes:
+            raise SystemExit(f"profil {name}: route '{r['alias']}' tidak ada di DB")
+        for t in r.get("targets") or []:
+            if t["model"] not in models:
+                raise SystemExit(
+                    f"profil {name}: route {r['alias']} → model '{t['model']}' tak ada"
+                )
+            # route yang tetap aktif tidak boleh menunjuk model nonaktif (route nonaktif boleh:
+            # targetnya disimpan untuk diaktifkan lagi nanti)
+            if r.get("is_enabled", routes[r["alias"]].is_enabled) and not enabled_after(t["model"]):
+                raise SystemExit(
+                    f"profil {name}: route {r['alias']} menunjuk model nonaktif '{t['model']}'"
+                )
+    listed = {r["alias"] for r in profile.get("routes") or []}
+    alias_by_id_all = {m.id: alias for alias, m in models.items()}
+    for alias, route in routes.items():
+        if alias in listed or not route.is_enabled:
+            continue
+        targets = (
+            await session.execute(
+                select(ModelRouteTarget.model_id).where(ModelRouteTarget.route_id == route.id)
+            )
+        ).scalars()
+        off = [alias_by_id_all[t] for t in targets if not enabled_after(alias_by_id_all[t])]
+        if off:
+            print(
+                f"  PERINGATAN: route {alias} (tidak diatur profil) menunjuk model nonaktif {off}"
+            )
+
+    changed = 0
+    # provider: hanya is_enabled (mis. matikan runtime lokal `openvino` di profil remote-only)
+    providers = {p.code: p for p in (await session.execute(select(Provider))).scalars()}
+    for code, values in (profile.get("providers") or {}).items():
+        if code not in providers:
+            raise SystemExit(f"profil {name}: provider '{code}' tidak ada di DB")
+        if set(values) - {"is_enabled"}:
+            raise SystemExit(f"profil {name}: provider hanya boleh mengatur is_enabled")
+        provider = providers[code]
+        if provider.is_enabled != bool(values["is_enabled"]):
+            before = {"code": code, "is_enabled": provider.is_enabled}
+            provider.is_enabled = bool(values["is_enabled"])
+            session.add(
+                AuditLog(
+                    actor_key_id=None,
+                    action=f"provider.profile:{name}",
+                    entity_type="provider",
+                    entity_id=code,
+                    before=before,
+                    after={"code": code, "is_enabled": provider.is_enabled},
+                )
+            )
+            print(f"  provider.profile:{name}: {code}")
+            changed += 1
+    action = f"model.profile:{name}"
+    for alias, values in wanted_models.items():
+        model = models[alias]
+        before = {f: getattr(model, f) for f in values}
+        if _audit_change(session, model, before, dict(values), action):
+            changed += 1
+
+    alias_by_id = {m.id: alias for alias, m in models.items()}
+    for r in profile.get("routes") or []:
+        route = routes[r["alias"]]
+        current = (
+            (
+                await session.execute(
+                    select(ModelRouteTarget).where(ModelRouteTarget.route_id == route.id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        before_targets = sorted((alias_by_id[t.model_id], t.priority, t.weight) for t in current)
+        after_targets = before_targets
+        if r.get("targets") is not None:
+            after_targets = sorted(
+                (t["model"], int(t.get("priority", 1)), int(t.get("weight", 1)))
+                for t in r["targets"]
+            )
+        enabled = bool(r.get("is_enabled", route.is_enabled))
+        if after_targets == before_targets and enabled == route.is_enabled:
+            continue
+        if after_targets != before_targets:
+            for t in current:
+                await session.delete(t)
+            await session.flush()
+            session.add_all(
+                ModelRouteTarget(route_id=route.id, model_id=models[m].id, priority=p, weight=w)
+                for m, p, w in after_targets
+            )
+        before = {"is_enabled": route.is_enabled, "targets": [list(t) for t in before_targets]}
+        route.is_enabled = enabled
+        session.add(
+            AuditLog(
+                actor_key_id=None,
+                action=f"route.profile:{name}",
+                entity_type="model_route",
+                entity_id=str(route.id),
+                before={"alias": route.alias, **before},
+                after={
+                    "alias": route.alias,
+                    "is_enabled": enabled,
+                    "targets": [list(t) for t in after_targets],
+                },
+            )
+        )
+        print(f"  route.profile:{name}: {route.alias}")
+        changed += 1
+    await session.commit()
+    return changed
+
+
+async def cmd_apply_profile(args: argparse.Namespace) -> None:
+    path = Path(args.file)
+    if not path.is_file():
+        path = ROOT / "scripts" / "profiles" / f"{args.file}.yaml"
+    profile = yaml.safe_load(path.read_text(encoding="utf-8"))
+    async with SessionLocal() as session:
+        changed = await _apply_profile(session, profile)
+    print(f"profil {profile.get('name')}: {changed} perubahan")
+    if changed:
+        print(
+            "Muat ulang katalog: POST /admin/cache/reload (key admin), atau restart "
+            "(scripts\\stop-all.bat --keep-db lalu scripts\\start-all.bat)"
+        )
 
 
 async def cmd_allow_models(args: argparse.Namespace) -> None:
@@ -474,6 +628,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--description")
     p.add_argument("--allow", help="pola model/route yang diizinkan, dipisah koma (glob)")
     p.set_defaults(func=cmd_create_project)
+
+    p = sub.add_parser(
+        "apply-profile", help="terapkan profil operasional (model aktif + route), mis. ram16"
+    )
+    p.add_argument("file", help="nama profil di scripts/profiles/ (ram16, full) atau path yaml")
+    p.set_defaults(func=cmd_apply_profile)
 
     p = sub.add_parser("allow-models", help="ganti pola model/route yang diizinkan project")
     p.add_argument("--project", required=True, help="slug project")

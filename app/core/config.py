@@ -1,11 +1,28 @@
 import os
+import re
 from functools import lru_cache
 from typing import Annotated, Literal
 
+from dotenv import dotenv_values
 from pydantic import Field, SecretStr, ValidationError, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 MIN_SECRET_LEN = 32
+
+# Nama env API key provider REMOTE wajib berpola *_API_KEY: secret internal gateway
+# (GATEWAY_KEY_PEPPER, RUNTIME_TOKEN, DATABASE_URL, ...) tidak mungkin dikirim ke API pihak ketiga
+# walau provider dibuat lewat Admin API dengan base_url sembarang.
+PROVIDER_KEY_ENV_RE = re.compile(r"^[A-Z][A-Z0-9_]{0,55}_API_KEY$")
+
+
+def valid_provider_key_env(name: str | None) -> bool:
+    return bool(name) and PROVIDER_KEY_ENV_RE.fullmatch(str(name)) is not None
+
+
+@lru_cache(maxsize=1)
+def _dotenv() -> dict[str, str | None]:
+    """Isi `.env` untuk key provider custom yang tidak punya field Settings (ubah → restart)."""
+    return dotenv_values(".env") if os.path.exists(".env") else {}
 
 
 class ConfigError(Exception):
@@ -119,6 +136,8 @@ class Settings(BaseSettings):
             return field.get_secret_value() or None
         if isinstance(field, str):
             return field or None
+        if valid_provider_key_env(env_name):  # provider custom: nilai langsung dari .env
+            return _dotenv().get(env_name) or None
         return None
 
     def startup_warnings(self) -> list[str]:

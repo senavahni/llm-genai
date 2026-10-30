@@ -9,7 +9,9 @@ from app.services.context import Outcome, RequestCtx
 from app.services.router_service import Router
 
 
-def _clamp(ctx: RequestCtx, req: UnifiedCompletionRequest, model: ModelConfig):
+def _clamp(
+    ctx: RequestCtx, req: UnifiedCompletionRequest, model: ModelConfig
+) -> UnifiedCompletionRequest:
     limit = model.max_output_tokens
     if req.max_tokens is not None and limit and req.max_tokens > limit:
         if "max_tokens_clamped" not in ctx.warnings:

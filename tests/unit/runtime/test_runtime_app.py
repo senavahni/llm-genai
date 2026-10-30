@@ -108,6 +108,30 @@ async def test_health_ready_warming_up_progress_then_ready():  # TASK-18 AC1b
         m.close()
 
 
+async def test_ram_headroom_reported_in_health():  # TASK-20: UMA, RAM sistem = memori iGPU
+    settings = get_settings()
+    catalog = RuntimeCatalog(session_factory=None)  # type: ignore[arg-type]
+    big = spec("local/big", 5000)
+    catalog.set({"big": big})
+    state = build_state(settings, _probe(), catalog, _Events(), backend_factory=FakeBackend)  # type: ignore[arg-type]
+    app = create_runtime_app(settings, with_lifespan=False)
+    app.state.rt = state
+    state.free_ram_mb = lambda: 1800
+    assert state.ram_headroom() == {
+        "system_available_mb": 1800,
+        "largest_gpu_load_mb": 5000,
+        "low": True,
+    }
+    state.free_ram_mb = lambda: 7000
+    async with _client(app) as c:
+        system = (await c.get("/health/ready")).json()["memory"]["system"]
+    assert system["low"] is False
+    await state.managers["gpu"].load(big, "test")  # sudah termuat → tidak perlu RAM baru
+    assert state.ram_headroom()["largest_gpu_load_mb"] == 0
+    for m in state.managers.values():
+        m.close()
+
+
 async def test_requires_runtime_token(runtime_app):
     async with _client(runtime_app) as c:
         for path in ("/v1/chat/completions", "/runtime/status"):

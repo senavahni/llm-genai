@@ -7,6 +7,10 @@
 #   `convert: true` (dibuat scripts/convert_openvino.py).
 # - vram_mb: hasil ukur scripts/measure_models.py → `manage.py seed --update-local`.
 # - Nama model remote & harga: cek dokumentasi provider saat implementasi; harga 0 = belum diisi.
+# - File ini = FAKTA model (kemampuan, artefak) + katalog & route lengkap. Model mana yang aktif
+#   dan ke mana route menunjuk diatur PROFIL operasional (scripts/profiles/*.yaml) lewat
+#   `manage.py apply-profile`; `seed --update-local` tidak mengubah is_enabled kecuali ditulis
+#   eksplisit di sini.
 
 providers:
   - {code: openai, kind: remote, display_name: OpenAI, base_url: "https://api.openai.com/v1", api_key_env: OPENAI_API_KEY}
@@ -14,6 +18,13 @@ providers:
   - {code: gemini, kind: remote, display_name: Google Gemini, base_url: "https://generativelanguage.googleapis.com", api_key_env: GEMINI_API_KEY}
   # base_url lokal diisi dari RUNTIME_URL saat seed. Semua model lokal lewat OpenVINO (GPU/NPU).
   - {code: openvino, kind: local, display_name: "OpenVINO (Local Runtime)", base_url: "${RUNTIME_URL}", api_key_env: RUNTIME_TOKEN, timeout_seconds: 300, max_concurrency: 4}
+  # Provider API lain (tak terbatas jumlahnya): pilih adapter yang formatnya cocok lewat
+  # config.adapter (openai | anthropic | gemini). Key = NAMA env berpola *_API_KEY, nilai di .env.
+  # Lebih praktis lewat Admin API (POST /admin/providers, lihat docs/admin-api.http). Contoh:
+  # - {code: deepseek, kind: remote, display_name: DeepSeek, base_url: "https://api.deepseek.com/v1", api_key_env: DEEPSEEK_API_KEY, config: {adapter: openai}}
+  # - {code: groq, kind: remote, display_name: Groq, base_url: "https://api.groq.com/openai/v1", api_key_env: GROQ_API_KEY, config: {adapter: openai}}
+  # - {code: openrouter, kind: remote, display_name: OpenRouter, base_url: "https://openrouter.ai/api/v1", api_key_env: OPENROUTER_API_KEY, config: {adapter: openai, headers: {X-Title: llm-gateway}}}
+  # - {code: ollama-lan, kind: remote, display_name: Ollama LAN, base_url: "http://192.168.1.50:11434/v1", config: {adapter: openai, auth: none}}
 
 models:
   # ===================== Model lokal (OpenVINO) =====================
@@ -58,7 +69,9 @@ models:
   - alias: local/qwen2.5-coder-1.5b
     provider: openvino
     upstream_name: qwen2.5-coder-1.5b
-    model_type: completion
+    # chat + FIM + tools dari SATU salinan di NPU: melayani /v1/chat/completions (route code) dan
+    # /v1/completions (autocomplete); template chat Qwen2.5 native mendukung tools (Hermes)
+    model_type: chat
     tier: light
     device: npu
     runtime_backend: openvino_llm
@@ -69,6 +82,7 @@ models:
     artifact_sha256: 91b923db2ca875709d6c4595c23b5862a752631dae94b484ecfdfa93d4fe8299
     is_pinned: true
     supports_fim: true
+    supports_tools: true
     license: apache-2.0
     context_window: 4096
     max_output_tokens: 1024
@@ -93,9 +107,12 @@ models:
     is_pinned: false
     license: apache-2.0
     supports_vision: true
+    # template Qwen2-VL tanpa bagian tools → backend merender Hermes manual (tool_prompt.py)
+    supports_tools: true
     context_window: 4096
     max_output_tokens: 2048
-    config: {device: GPU, max_image_px: 1280, max_images: 4, cache_dir: local_models/ov_cache}
+    config: {device: GPU, tool_parser: hermes, max_image_px: 1280, max_images: 4,
+             cache_dir: local_models/ov_cache}
 
   - alias: local/sd-1.5
     provider: openvino

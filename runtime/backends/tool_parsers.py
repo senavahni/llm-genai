@@ -193,8 +193,11 @@ class StreamToolParser:
     def finish(self) -> list[tuple[str, Any]]:
         """Akhir stream: buffer yang ditahan diputuskan (tool call menyimpang atau teks); sisa
         lain (termasuk blok tanpa penutup) dikirim sebagai teks."""
-        rest, self._buf, self._in_block = self._buf, "", False
-        if self._lenient is not False and rest:
+        rest, in_block = self._buf, self._in_block
+        self._buf, self._in_block = "", False
+        # blok `<tool_call>` tanpa penutup (model berhenti sebelum `</tool_call>`, sering pada
+        # Qwen2-VL): diperlakukan sama dengan non-stream (parse_tool_output → parse_lenient)
+        if (self._lenient is not False or in_block) and rest:
             calls = parse_lenient(rest, self._tool_names)
             if calls:
                 return [("tool_call", call) for call in calls]

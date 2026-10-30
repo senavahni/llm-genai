@@ -347,3 +347,51 @@ async def test_vlm_images_tagged_resized_and_limited(fake, make):
         await b.chat({**_chat(), "tools": [TOOL]})
     with pytest.raises(CapabilityNotSupported):
         await b.completion({"prompt": "x"})
+
+
+async def test_vlm_tools_rendered_hermes_and_parsed(fake, make):
+    """Qwen2-VL: template tanpa bagian tools → definisi & riwayat tool dirender Hermes manual."""
+    b = await make(OVVLMBackend)
+    fake.LLMPipeline.output = (
+        '<tool_call>{"name": "get_weather", "arguments": {"city": "Bandung"}}</tool_call>'
+    )
+    resp = await b.chat(_chat("Cuaca Bandung?", tools=[TOOL], max_tokens=200))
+    choice = resp["choices"][0]
+    assert choice["finish_reason"] == "tool_calls"
+    call = choice["message"]["tool_calls"][0]
+    assert json.loads(call["function"]["arguments"]) == {"city": "Bandung"}
+    system = fake.LLMPipeline.instances[-1].last_history[0]
+    assert system["role"] == "system" and "<tools>" in system["content"]
+    assert '"name": "get_weather"' in system["content"]
+
+    # giliran kedua: tool call + hasil tool → teks Hermes, role hanya system/user/assistant
+    fake.LLMPipeline.output = "Bandung 21C, hujan"
+    history = [
+        {"role": "system", "content": "Asisten cuaca."},
+        {"role": "user", "content": "Cuaca Bandung?"},
+        {"role": "assistant", "content": None, "tool_calls": [call]},
+        {"role": "tool", "tool_call_id": call["id"], "content": '{"suhu": 21}'},
+        {"role": "tool", "tool_call_id": "x", "content": '{"cuaca": "hujan"}'},
+    ]
+    resp = await b.chat({"messages": history, "tools": [TOOL]})
+    assert resp["choices"][0]["message"]["content"] == "Bandung 21C, hujan"
+    rendered = fake.LLMPipeline.instances[-1].last_history
+    assert [m["role"] for m in rendered] == ["system", "user", "assistant", "user"]
+    assert (
+        rendered[0]["content"].startswith("Asisten cuaca.") and "<tools>" in rendered[0]["content"]
+    )
+    assert (
+        '<tool_call>\n{"name": "get_weather", "arguments": {"city": "Bandung"}}'
+        in (rendered[2]["content"])
+    )
+    assert rendered[3]["content"].count("<tool_response>") == 2  # hasil tool digabung
+
+    # stream: blok tool call ditahan sampai lengkap, lalu dikirim sebagai tool_calls
+    fake.LLMPipeline.output = (
+        'Cek dulu. <tool_call>{"name": "get_weather", "arguments": {"city": "Bogor"}}</tool_call>'
+    )
+    chunks = await _collect(b.chat_stream(_chat(tools=[TOOL], max_tokens=200), asyncio.Event()))
+    calls = [tc for c in chunks for tc in c["choices"][0]["delta"].get("tool_calls") or []]
+    assert len(calls) == 1 and chunks[-1]["choices"][0]["finish_reason"] == "tool_calls"
+    with pytest.raises(UnsupportedParameter):
+        await b.chat(_chat(tools=[TOOL], tool_choice="required"))

@@ -7,6 +7,7 @@ from app.core.database import SessionLocal
 from app.schemas.admin import (
     ModelCreate,
     ModelUpdate,
+    ProviderCreate,
     ProviderUpdate,
     RouteCreate,
     RouteUpdate,
@@ -18,6 +19,18 @@ from app.services import model_service as svc
 async def list_providers() -> dict[str, Any]:
     async with SessionLocal() as s:
         return {"data": await svc.list_providers(s), "next_cursor": None}
+
+
+async def create_provider(
+    body: ProviderCreate, request: Request, auth: AuthContext
+) -> dict[str, Any]:
+    async with SessionLocal() as s:
+        return await svc.create_provider(s, actor(request, auth), body, optional_registry(request))
+
+
+async def delete_provider(code: str, request: Request, auth: AuthContext) -> dict[str, Any]:
+    async with SessionLocal() as s:
+        return await svc.delete_provider(s, actor(request, auth), code, optional_registry(request))
 
 
 async def update_provider(

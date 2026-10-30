@@ -114,11 +114,29 @@ class ApiKeyCreatedOut(ApiKeyOut):
 
 # ---------------------------------------------------------------- provider
 class ProviderUpdate(_In):
+    display_name: str | None = Field(default=None, min_length=1, max_length=64)
     is_enabled: bool | None = None
     timeout_seconds: int | None = Field(default=None, ge=1, le=3600)
     max_concurrency: int | None = Field(default=None, ge=1, le=1000)
-    base_url: str | None = None
+    base_url: str | None = Field(default=None, pattern=r"^https?://")
+    # NAMA env berpola *_API_KEY (nilai di .env, tidak pernah di DB)
+    api_key_env: str | None = Field(default=None, max_length=64)
     config: dict[str, Any] | None = None
+
+
+class ProviderCreate(_In):
+    """Provider remote baru dengan adapter yang sudah ada (format API kompatibel)."""
+
+    code: str = Field(pattern=r"^[a-z][a-z0-9_-]{1,31}$")
+    display_name: str = Field(min_length=1, max_length=64)
+    adapter: Literal["openai", "anthropic", "gemini"] = "openai"
+    base_url: str | None = Field(default=None, pattern=r"^https?://")
+    api_key_env: str | None = Field(default=None, max_length=64)
+    timeout_seconds: int = Field(default=120, ge=1, le=3600)
+    max_concurrency: int = Field(default=16, ge=1, le=1000)
+    is_enabled: bool = True
+    # mis. {"auth": "none"} (tanpa key), {"headers": {"X-Title": "gateway"}}
+    config: dict[str, Any] = Field(default_factory=dict)
 
 
 class ProviderOut(_Out):

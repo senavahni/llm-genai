@@ -146,13 +146,26 @@ def AuthContextNoPatterns() -> AuthContext:  # noqa: N802
 
 async def test_capability_filter_messages():
     router = Router(_registry(_all_providers()))
-    with pytest.raises(CapabilityNotSupported, match="tools"):  # AC5
-        await router.resolve("local/qwen2-vl-2b", _auth(), Capabilities(vision=True, tools=True))
+    with pytest.raises(CapabilityNotSupported, match="vision"):  # AC5
+        await router.resolve("local/qwen2.5-7b", _auth(), Capabilities(vision=True))
     # route campuran: hanya kandidat yang mendukung yang tersisa
-    got = await router.resolve("vision", _auth(), Capabilities(vision=True, tools=True))
+    got = await router.resolve("vision", _auth(), Capabilities(vision=True, json=True))
     assert [m.alias for m in got] == ["openai/gpt-light"]
     with pytest.raises(CapabilityNotSupported, match="fim"):
         await router.resolve("fast", _auth(), Capabilities("completion", fim=True))
+
+
+async def test_chat_model_with_fim_serves_completions():
+    """Coder-1.5B: satu model chat (+tools) yang juga melayani /v1/completions (FIM & raw)."""
+    router = Router(_registry(_all_providers()))
+    for need in (Capabilities("completion", fim=True), Capabilities("completion")):
+        [m] = await router.resolve("local/qwen2.5-coder-1.5b", _auth(), need)
+        assert m.model_type == "chat"
+    [m] = await router.resolve("local/qwen2.5-coder-1.5b", _auth(), Capabilities(tools=True))
+    assert m.supports_tools
+    # model chat tanpa FIM tetap tidak melayani completions
+    with pytest.raises(CapabilityNotSupported, match="model_type"):
+        await router.resolve("local/qwen2-vl-2b", _auth(), Capabilities("completion"))
 
 
 async def test_inactive_providers_dropped():

@@ -7,7 +7,8 @@ from typing import Any, ClassVar
 from app.utils.errors import CapabilityNotSupported, InvalidRequestError
 from runtime.backends.image_input import load_image
 from runtime.backends.ov_common import genai
-from runtime.backends.ov_llm_backend import OVLLMBackend, Prepared
+from runtime.backends.ov_llm_backend import OVLLMBackend, Prepared, tool_names
+from runtime.backends.tool_prompt import render_hermes_messages
 
 IMAGE_TAG = "<ov_genai_image_{}>"
 
@@ -57,10 +58,10 @@ class OVVLMBackend(OVLLMBackend):
         import numpy as np
         import openvino as ov
 
-        if req.get("tools"):
-            raise CapabilityNotSupported(f"{self.spec.alias} tidak mendukung tools")
+        tools = self.request_tools(req)
         self._image_index = 0
-        messages = self.chat_messages(req)
+        # template Qwen2-VL tidak punya bagian tools → render Hermes manual (sama dgn Qwen2.5)
+        messages = render_hermes_messages(self.chat_messages(req), tools)
         history = genai().ChatHistory(messages)
         images = [ov.Tensor(np.ascontiguousarray(a)[None]) for a in arrays]
         # perkiraan token teks untuk batas; jumlah akurat (termasuk token gambar) dari perf_metrics
@@ -72,7 +73,9 @@ class OVVLMBackend(OVLLMBackend):
             config=cfg,
             prompt_tokens=text_tokens,
             max_new_tokens=max_new,
+            tools=bool(tools),
             warnings=warnings,
+            tool_names=tool_names(tools),
         )
 
     async def prepare_chat_async(self, req: dict[str, Any]) -> Prepared:

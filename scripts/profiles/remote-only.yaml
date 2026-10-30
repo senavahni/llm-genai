@@ -1,0 +1,39 @@
+# Profil tanpa model lokal: semua inferensi lewat API remote (dipakai sejak 30 Okt 2026 agar mesin
+# ringan). Local Runtime tidak perlu dijalankan:
+#   scripts\conda-run.bat python scripts\manage.py apply-profile remote-only
+#   scripts\start-all.bat --no-runtime
+# Model lokal & provider `openvino` DINONAKTIFKAN (bukan dihapus): file model & cache compile
+# OpenVINO tetap di disk. Kembali: `apply-profile ram16` (2 model kecil) atau `full`.
+#
+# Route hanya berisi kandidat remote. Provider tanpa API key di .env dilewati otomatis; isi
+# minimal satu key (OPENAI/ANTHROPIC/GEMINI atau provider custom, lihat docs/model-catalog.md)
+# agar route bisa melayani request. Route yang tidak punya kandidat remote dimatikan.
+name: remote-only
+
+providers:
+  openvino: {is_enabled: false}
+
+models:
+  local/qwen2.5-7b: {is_enabled: false}
+  local/qwen2.5-coder-7b: {is_enabled: false}
+  local/qwen2.5-coder-1.5b: {is_enabled: false}
+  local/qwen2-vl-2b: {is_enabled: false}
+  local/sd-1.5: {is_enabled: false}
+
+routes:
+  - alias: fast
+    targets: [{model: gemini/flash, priority: 1}, {model: anthropic/claude-haiku, priority: 2},
+              {model: openai/gpt-light, priority: 3}]
+  - alias: smart
+    targets: [{model: anthropic/claude-sonnet, priority: 1}, {model: openai/gpt-heavy, priority: 2}]
+  - alias: code
+    targets: [{model: anthropic/claude-sonnet, priority: 1}, {model: openai/gpt-heavy, priority: 2}]
+  - alias: vision
+    targets: [{model: openai/gpt-light, priority: 1}, {model: anthropic/claude-haiku, priority: 2}]
+  # tanpa padanan remote: dimatikan (target lama disimpan untuk profil lain)
+  - alias: local
+    is_enabled: false
+  - alias: autocomplete
+    is_enabled: false
+  - alias: image
+    is_enabled: false

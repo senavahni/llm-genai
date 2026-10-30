@@ -1,0 +1,48 @@
+# Traefik v3 (portable, tanpa admin) — konfigurasi statis Mode B (TASK-22).
+# Dijalankan dari root project oleh scripts\start-traefik.bat (path relatif terhadap root).
+global:
+  checkNewVersion: false
+  sendAnonymousUsage: false
+
+entryPoints:
+  web:
+    address: ":8080"
+    transport:
+      respondingTimeouts:
+        readTimeout: 300s      # upload body besar (gambar base64)
+        writeTimeout: 0s       # 0 = tanpa batas, wajib untuk stream SSE panjang
+        idleTimeout: 180s
+    forwardedHeaders:
+      insecure: false          # X-Forwarded-* dari klien dibuang; Traefik mengisi sendiri
+  dashboard:
+    address: "127.0.0.1:8081"  # dashboard hanya dari mesin ini
+  # TLS opsional (lihat docs/deployment.md "TLS"):
+  # websecure:
+  #   address: ":8443"
+  #   http:
+  #     tls: {}
+
+api:
+  dashboard: true
+
+providers:
+  file:
+    filename: "deploy/traefik/dynamic.yml"
+    watch: true
+
+log:
+  level: INFO
+  filePath: "logs/traefik.log"
+  format: json
+
+accessLog:
+  filePath: "logs/traefik-access.log"
+  format: json
+  bufferingSize: 50
+  fields:
+    headers:
+      defaultMode: drop        # Authorization tidak pernah ditulis
+      names:
+        X-Request-ID: keep
+        User-Agent: keep
+        X-Caller-Task: keep
