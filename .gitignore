@@ -4,6 +4,10 @@
 !.env.example
 *.bak
 
+.claude/
+.claude/*
+CLAUDE.MD
+
 # python
 __pycache__/
 *.py[cod]

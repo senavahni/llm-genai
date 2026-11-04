@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends
 
 from app.routes.admin import (
     audit,
+    env,
     keys,
     maintenance,
     models,
@@ -29,5 +30,6 @@ for module in (
     audit,
     runtime,
     maintenance,
+    env,
 ):
     router.include_router(module.router)

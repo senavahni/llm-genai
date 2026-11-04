@@ -1,0 +1,459 @@
+// Konsol LLM Gateway: project, API key lgw_, kuota, provider, status .env (memakai Admin API /admin/*).
+'use strict';
+
+(() => {
+  const { h, api, toast, confirm, showSecret, form, help, badge, table, btn, action, when, genUrlSafe } = Kit;
+  const root = document.getElementById('root');
+  const MCP_PROJECT = 'marketing-mcp';
+  const SCOPES = ['chat', 'completions', 'embeddings', 'images', 'models:read', 'usage:read'];
+  const SCOPE_HELP = 'Biasanya cukup chat + embeddings + models:read. MCP memakai chat, embeddings, models:read, usage:read.';
+
+  const pageHead = (eyebrow, title, desc, actions) =>
+    h('div', { class: 'page-head' }, h('div', {}, h('div', { class: 'eyebrow', text: eyebrow }), h('h1', { text: title }), desc ? h('p', { text: desc }) : null), actions ? h('div', { class: 'actions' }, actions) : null);
+
+  const usd = (v) => (v === null || v === undefined ? '—' : `$${Number(v).toFixed(2)}`);
+
+  // ============================================================== 01 Mulai
+  async function startPage({ go }) {
+    const [env, projects] = await Promise.all([api('GET', '/admin/env-status'), api('GET', '/admin/projects')]);
+    const mcp = projects.data.find((p) => p.slug === MCP_PROJECT);
+    const [keys, quotas] = mcp
+      ? await Promise.all([api('GET', `/admin/projects/${mcp.id}/keys`), api('GET', `/admin/projects/${mcp.id}/quotas`)])
+      : [{ data: [] }, { data: [] }];
+    const remote = env.providers.filter((p) => p.is_enabled && p.key_state !== 'not_needed');
+    const providerOk = remote.some((p) => p.key_state === 'ok');
+    const activeKeys = keys.data.filter((k) => k.status === 'active');
+    const costQuota = quotas.data.some((q) => q.is_enabled && q.max_cost_usd !== null);
+
+    return h(
+      'div',
+      { class: 'stack' },
+      pageHead('01 · Mulai di sini', 'Ringkasan kredensial Gateway', 'Gateway adalah satu-satunya tempat yang memegang API key OpenAI/Anthropic/Gemini. Aplikasi lain (MCP, Dashboard) hanya memegang key lgw_ buatan Gateway.'),
+      h(
+        'section',
+        { class: 'card' },
+        h('div', { class: 'card-head' }, h('h2', { text: 'Alur key' })),
+        Kit.flow(
+          [
+            { label: 'Dashboard', sub: 'tidak pegang key LLM' },
+            { label: 'MCP', sub: 'key lgw_ per agent (terenkripsi)' },
+            { label: 'LLM Gateway', sub: 'konsol ini', here: true },
+            { label: 'OpenAI / dll.', sub: 'key provider di .env' },
+          ],
+          ['mcpk_ / MCP_SERVER_API_KEY', 'lgw_…', 'OPENAI_API_KEY'],
+        ),
+        h('p', { class: 'muted', text: 'Tiap panah = satu jenis kredensial. Kalau satu bocor, cukup cabut yang itu saja tanpa mengganggu yang lain.' }),
+      ),
+      Kit.checklist([
+        { done: true, title: 'Masuk dengan admin key', detail: 'Admin key berbeda dari key aplikasi: hanya untuk mengelola Gateway, jangan dipasang di aplikasi mana pun.' },
+        {
+          done: providerOk,
+          title: 'API key provider terisi di .env Gateway',
+          detail: providerOk ? `Provider siap: ${remote.filter((p) => p.key_state === 'ok').map((p) => p.display_name).join(', ')}.` : 'Isi mis. OPENAI_API_KEY di file .env Gateway lalu restart Gateway.',
+          action: providerOk ? null : btn('Lihat provider', () => go('providers'), 'ghost', { class: 'btn btn-ghost btn-sm' }),
+        },
+        {
+          done: !!mcp,
+          title: `Project "${MCP_PROJECT}" untuk agent MCP`,
+          detail: mcp ? 'Project ada. Semua key agent MCP berada di project ini sehingga biayanya terkumpul dan bisa dibatasi.' : 'Paling mudah: buka Konsol MCP → "Key LLM per agent" → Provision otomatis. Project & key dibuat sekaligus.',
+        },
+        {
+          done: activeKeys.length > 0,
+          title: 'Key aktif untuk agent MCP',
+          detail: activeKeys.length ? `${activeKeys.length} key aktif (${activeKeys.map((k) => k.name).join(', ')}).` : 'Belum ada key aktif di project MCP.',
+        },
+        {
+          done: costQuota,
+          title: 'Batas biaya (kuota USD) diset',
+          detail: costQuota ? 'Gateway menolak permintaan saat kuota habis — tagihan tidak bisa kebablasan.' : 'Disarankan: harian $5, bulanan $50. Atur di menu Project & Key.',
+          action: mcp && !costQuota ? btn('Atur kuota', () => go('projects'), 'ghost', { class: 'btn btn-ghost btn-sm' }) : null,
+        },
+      ]),
+      help(
+        'Istilah yang perlu diketahui',
+        [
+          h('ul', {}, [
+            h('li', {}, h('strong', { text: 'Admin key' }), ' — key role admin untuk konsol & Admin API. Dibuat lewat CLI, tidak bisa dibuat dari konsol (supaya kebocoran sesi tidak bisa mencetak admin baru).'),
+            h('li', {}, h('strong', { text: 'Project' }), ' — wadah untuk satu aplikasi/tim. Model yang diizinkan & kuota biaya diatur per project.'),
+            h('li', {}, h('strong', { text: 'Key lgw_' }), ' — key aplikasi milik satu project. Ditampilkan sekali saat dibuat; yang tersimpan hanya hash-nya.'),
+            h('li', {}, h('strong', { text: 'Rotasi' }), ' — buat key baru & matikan yang lama sekaligus. Aplikasi pemakai harus diberi key baru.'),
+            h('li', {}, h('strong', { text: 'Cabut' }), ' — matikan key permanen (mis. bocor). Berlaku dalam hitungan detik.'),
+          ]),
+        ],
+        { open: true },
+      ),
+    );
+  }
+
+  // ===================================================== 02 Project & Key
+  let selectedProject = null;
+
+  async function projectsPage({ refresh }) {
+    const projects = (await api('GET', '/admin/projects')).data;
+    if (!projects.find((p) => p.id === selectedProject)) {
+      selectedProject = (projects.find((p) => p.slug === MCP_PROJECT) || projects.find((p) => p.status !== 'archived') || {}).id || null;
+    }
+    const list = table(
+      [
+        { label: 'Project', render: (p) => h('button', { type: 'button', class: 'btn btn-sm ' + (p.id === selectedProject ? 'btn-primary' : 'btn-ghost'), onclick: () => { selectedProject = p.id; refresh(); } }, p.name) },
+        { label: 'Slug', render: (p) => h('code', { text: p.slug }) },
+        { label: 'Status', render: (p) => badge(p.status === 'active' ? 'active' : p.status) },
+        { label: 'Pemilik', render: (p) => p.owner || '—' },
+      ],
+      projects,
+      { empty: 'Belum ada project. Buat satu, atau jalankan provisioning dari Konsol MCP.' },
+    );
+    const detail = selectedProject ? await projectDetail(selectedProject, refresh) : null;
+    return h(
+      'div',
+      { class: 'stack' },
+      pageHead('02 · Project & Key', 'Project, API key & kuota', 'Pilih project untuk melihat key-nya. Key lengkap hanya muncul sekali saat dibuat/dirotasi.', [action('+ Project baru', () => createProject(refresh), 'primary')]),
+      h('section', { class: 'card' }, list),
+      detail,
+      help('Kapan rotasi, kapan cabut?', [
+        'Rotasi: rutin (mis. 3–6 bulan) atau saat orang yang tahu key-nya keluar tim. Key baru langsung dipakai, key lama mati saat itu juga — siapkan tempat tujuan key baru dulu.',
+        'Cabut: saat key bocor/tidak dipakai lagi. Aplikasi yang masih memakainya akan mendapat error 401.',
+        'Untuk key agent MCP, lebih aman rotasi dari Konsol MCP (Provision ulang) karena MCP otomatis menyimpan key baru terenkripsi.',
+      ]),
+    );
+  }
+
+  async function projectDetail(id, refresh) {
+    const [project, keys, quotas] = await Promise.all([api('GET', `/admin/projects/${id}`), api('GET', `/admin/projects/${id}/keys`), api('GET', `/admin/projects/${id}/quotas`)]);
+    const archived = project.status === 'archived';
+    const q = Object.fromEntries(quotas.data.map((x) => [x.period, x]));
+    const keyRows = keys.data.filter((k) => k.status === 'active').concat(keys.data.filter((k) => k.status !== 'active'));
+
+    const keyTable = table(
+      [
+        { label: 'Nama', render: (k) => h('div', {}, h('strong', { text: k.name }), h('span', { class: 'sub', text: `dibuat ${when(k.created_at)}` })) },
+        { label: 'Prefix', render: (k) => h('code', { text: k.key_prefix }) },
+        { label: 'Scope', render: (k) => h('div', {}, k.scopes.map((s) => h('span', { class: 'tag', text: s }))) },
+        { label: 'RPM', class: 'num', render: (k) => (k.rpm_limit ?? 'default') },
+        { label: 'Status', render: (k) => h('div', {}, badge(k.status), k.revoked_reason ? h('span', { class: 'sub', text: k.revoked_reason }) : null) },
+        { label: 'Terakhir dipakai', render: (k) => when(k.last_used_at) },
+        {
+          label: 'Aksi',
+          class: 'actions',
+          render: (k) =>
+            k.status === 'active'
+              ? h('span', {}, action('Rotasi', () => rotateKey(k, refresh), 'ghost', { class: 'btn btn-ghost btn-sm' }), action('Cabut', () => revokeKey(k, refresh), 'danger', { class: 'btn btn-danger btn-sm' }))
+              : '—',
+        },
+      ],
+      keyRows,
+      { empty: 'Project ini belum punya key.' },
+    );
+
+    return h(
+      'div',
+      { class: 'stack' },
+      h(
+        'section',
+        { class: 'card' },
+        h(
+          'div',
+          { class: 'card-head' },
+          h('div', {}, h('h2', { text: project.name }), h('span', { class: 'sub' }, h('code', { text: project.slug }), ' · ', project.description || 'tanpa deskripsi')),
+          h(
+            'div',
+            { class: 'actions' },
+            archived ? null : action('+ Buat key', () => createKey(project, refresh), 'primary'),
+            archived ? null : action(project.status === 'active' ? 'Tangguhkan' : 'Aktifkan', () => toggleProject(project, refresh)),
+            archived ? null : action('Arsipkan', () => archiveProject(project, refresh), 'danger'),
+          ),
+        ),
+        project.status === 'suspended' ? h('div', { class: 'callout callout-warn' }, h('strong', { text: 'Project ditangguhkan' }), 'Semua key project ini ditolak sampai diaktifkan lagi.') : null,
+        keyTable,
+      ),
+      h(
+        'div',
+        { class: 'grid-2' },
+        h(
+          'section',
+          { class: 'card' },
+          h('div', { class: 'card-head' }, h('h2', { text: 'Kuota biaya' }), archived ? null : action('Ubah', () => editQuotas(project, q, refresh), 'ghost', { class: 'btn btn-ghost btn-sm' })),
+          h('dl', { class: 'kv' }, h('dt', { text: 'Harian' }), h('dd', {}, q.daily && q.daily.is_enabled ? usd(q.daily.max_cost_usd) : 'tanpa batas'), h('dt', { text: 'Bulanan' }), h('dd', {}, q.monthly && q.monthly.is_enabled ? usd(q.monthly.max_cost_usd) : 'tanpa batas')),
+          h('p', { class: 'muted', text: 'Saat kuota habis, Gateway menolak permintaan project ini sampai periode berganti.' }),
+        ),
+        h(
+          'section',
+          { class: 'card' },
+          h('div', { class: 'card-head' }, h('h2', { text: 'Model yang diizinkan' }), archived ? null : action('Ubah', () => editModels(project, refresh), 'ghost', { class: 'btn btn-ghost btn-sm' })),
+          h('div', {}, (project.allowed_models || []).length ? project.allowed_models.map((m) => h('span', { class: 'tag', text: m })) : h('span', { class: 'muted', text: 'Belum ada — semua permintaan model ditolak.' })),
+          h('p', { class: 'muted', text: 'Route (mis. smart) DAN kandidatnya (mis. openai/*) harus diizinkan.' }),
+        ),
+      ),
+    );
+  }
+
+  async function createProject(refresh) {
+    const v = await form({
+      title: 'Project baru',
+      intro: 'Satu project per aplikasi/tim. Untuk agent MCP tidak perlu dibuat manual — provisioning dari Konsol MCP membuat project "marketing-mcp".',
+      fields: [
+        { name: 'slug', label: 'Slug', required: true, placeholder: 'mis. riset-tim-a', help: 'huruf kecil, angka, tanda minus; tidak bisa diubah.' },
+        { name: 'name', label: 'Nama tampilan', required: true },
+        { name: 'owner', label: 'Pemilik / PIC' },
+        { name: 'allowed', label: 'Model yang diizinkan', value: 'fast, smart, embed-default, openai/*', help: 'dipisah koma.' },
+      ],
+      submitLabel: 'Buat project',
+    });
+    if (!v) return;
+    const created = await api('POST', '/admin/projects', {
+      slug: v.slug,
+      name: v.name,
+      owner: v.owner || null,
+      allowed_models: v.allowed.split(',').map((s) => s.trim()).filter(Boolean),
+    });
+    selectedProject = created.id;
+    toast(`Project ${created.slug} dibuat`);
+    refresh();
+  }
+
+  async function createKey(project, refresh) {
+    const v = await form({
+      title: `Key baru · ${project.slug}`,
+      fields: [
+        { name: 'name', label: 'Nama key', required: true, placeholder: 'mis. backend-prod', help: 'Nama aplikasi pemakai, supaya mudah dilacak.' },
+        { name: 'scopes', label: 'Scope', type: 'checks', value: ['chat', 'embeddings', 'models:read'], options: SCOPES.map((s) => ({ value: s, label: s })), help: SCOPE_HELP },
+        { name: 'rpm', label: 'Batas request/menit', type: 'number', min: 1, help: 'kosong = default Gateway.' },
+        { name: 'expires', label: 'Kedaluwarsa', type: 'date', help: 'kosong = tidak kedaluwarsa.' },
+      ],
+      submitLabel: 'Buat key',
+    });
+    if (!v) return;
+    if (!v.scopes.length) throw new Error('Pilih minimal satu scope.');
+    const created = await api('POST', `/admin/projects/${project.id}/keys`, {
+      name: v.name,
+      scopes: v.scopes,
+      rpm_limit: v.rpm,
+      expires_at: v.expires ? new Date(`${v.expires}T23:59:59`).toISOString() : null,
+    });
+    await showSecret({ title: `Key ${created.name}`, secret: created.key, note: 'Tempel ke aplikasi pemakai (mis. .env-nya). Untuk agent MCP: Konsol MCP → Key LLM per agent → Impor.' });
+    refresh();
+  }
+
+  async function rotateKey(k, refresh) {
+    const ok = await confirm({ title: `Rotasi key ${k.name}?`, message: `Key ${k.key_prefix}… langsung tidak berlaku. Aplikasi yang memakainya error sampai diberi key baru.`, confirmLabel: 'Rotasi sekarang', danger: true });
+    if (!ok) return;
+    const created = await api('POST', `/admin/keys/${k.id}/rotate`);
+    await showSecret({ title: `Key baru ${created.name}`, secret: created.key, note: 'Ganti key lama di aplikasi pemakai dengan nilai ini.' });
+    refresh();
+  }
+
+  async function revokeKey(k, refresh) {
+    const v = await form({ title: `Cabut key ${k.name}?`, intro: `Key ${k.key_prefix}… dimatikan permanen. Tidak bisa diaktifkan lagi.`, fields: [{ name: 'reason', label: 'Alasan', required: true, placeholder: 'mis. bocor di log / tidak dipakai' }], submitLabel: 'Cabut key' });
+    if (!v) return;
+    await api('POST', `/admin/keys/${k.id}/revoke`, { reason: v.reason });
+    toast(`Key ${k.name} dicabut`);
+    refresh();
+  }
+
+  async function toggleProject(p, refresh) {
+    const next = p.status === 'active' ? 'suspended' : 'active';
+    if (next === 'suspended' && !(await confirm({ title: `Tangguhkan ${p.slug}?`, message: 'Semua key project ini ditolak sementara. Bisa diaktifkan lagi kapan saja.', confirmLabel: 'Tangguhkan', danger: true }))) return;
+    await api('PATCH', `/admin/projects/${p.id}`, { status: next });
+    toast(next === 'active' ? 'Project diaktifkan' : 'Project ditangguhkan');
+    refresh();
+  }
+
+  async function archiveProject(p, refresh) {
+    const ok = await confirm({ title: `Arsipkan ${p.slug}?`, message: 'Project diarsipkan permanen dan semua key aktifnya dicabut. Riwayat pemakaian tetap tersimpan.', confirmLabel: 'Arsipkan', danger: true, typeToConfirm: p.slug });
+    if (!ok) return;
+    await api('DELETE', `/admin/projects/${p.id}`);
+    toast('Project diarsipkan');
+    refresh();
+  }
+
+  async function editQuotas(p, q, refresh) {
+    const cur = (period) => (q[period] && q[period].is_enabled && q[period].max_cost_usd !== null ? Number(q[period].max_cost_usd) : '');
+    const v = await form({
+      title: `Kuota biaya · ${p.slug}`,
+      intro: 'Kosongkan untuk tanpa batas. Batas request/token yang sudah ada tidak berubah.',
+      fields: [
+        { name: 'daily', label: 'Maks. biaya harian (USD)', type: 'number', min: 0, step: '0.01', value: cur('daily'), placeholder: 'mis. 5' },
+        { name: 'monthly', label: 'Maks. biaya bulanan (USD)', type: 'number', min: 0, step: '0.01', value: cur('monthly'), placeholder: 'mis. 50' },
+      ],
+    });
+    if (!v) return;
+    const quota = (period, value) => {
+      const old = q[period] || {};
+      const hasOther = [old.max_requests, old.max_tokens, old.max_images].some((x) => x !== null && x !== undefined);
+      return {
+        period,
+        max_requests: old.max_requests ?? null,
+        max_tokens: old.max_tokens ?? null,
+        max_images: old.max_images ?? null,
+        max_cost_usd: value === null ? null : value.toFixed(2),
+        is_enabled: value !== null || (hasOther && old.is_enabled !== false),
+      };
+    };
+    await api('PUT', `/admin/projects/${p.id}/quotas`, { quotas: [quota('daily', v.daily), quota('monthly', v.monthly)] });
+    toast('Kuota disimpan');
+    refresh();
+  }
+
+  async function editModels(p, refresh) {
+    const v = await form({
+      title: `Model diizinkan · ${p.slug}`,
+      fields: [{ name: 'patterns', label: 'Pola model', required: true, value: (p.allowed_models || []).join(', '), help: 'dipisah koma, mis. fast, smart, embed-default, openai/*' }],
+    });
+    if (!v) return;
+    await api('PUT', `/admin/projects/${p.id}/allowed-models`, { patterns: v.patterns.split(',').map((s) => s.trim()).filter(Boolean) });
+    toast('Daftar model disimpan');
+    refresh();
+  }
+
+  // ======================================================= 03 Provider
+  async function providersPage() {
+    const env = await api('GET', '/admin/env-status');
+    return h(
+      'div',
+      { class: 'stack' },
+      pageHead('03 · Provider', 'Provider & API key-nya', 'API key provider (OpenAI, dll.) sengaja TIDAK bisa dilihat atau diubah dari konsol: nilainya hanya ada di file .env Gateway.'),
+      h(
+        'section',
+        { class: 'card' },
+        table(
+          [
+            { label: 'Provider', render: (p) => h('div', {}, h('strong', { text: p.display_name }), h('span', { class: 'sub', text: p.code })) },
+            { label: 'Aktif', render: (p) => badge(p.is_enabled ? 'active' : 'not_needed', p.is_enabled ? 'Aktif' : 'Nonaktif') },
+            { label: 'Variabel .env', render: (p) => (p.api_key_env ? h('code', { text: p.api_key_env }) : '—') },
+            { label: 'Status key', render: (p) => badge(p.key_state) },
+            {
+              label: 'Tes',
+              class: 'actions',
+              render: (p) =>
+                p.is_enabled
+                  ? action('Tes koneksi', async () => {
+                      const r = await api('POST', `/admin/providers/${encodeURIComponent(p.code)}/test`);
+                      const ok = !!(r && r.ok);
+                      toast(ok ? `${p.display_name}: terhubung` : `${p.display_name}: ${(r && r.detail) || 'gagal'}`, ok ? 'ok' : 'err');
+                    }, 'ghost', { class: 'btn btn-ghost btn-sm' })
+                  : '—',
+            },
+          ],
+          env.providers,
+        ),
+      ),
+      help(
+        'Cara mengisi / mengganti API key provider',
+        [
+          h('ol', {}, [
+            h('li', { text: 'Buka file .env di folder llm-genai dengan Notepad.' }),
+            h('li', {}, 'Isi baris sesuai kolom "Variabel .env", mis. ', h('code', { text: 'OPENAI_API_KEY=sk-...' }), '. Jangan beri komentar di akhir baris.'),
+            h('li', { text: 'Simpan, lalu restart Gateway (tutup jendela Gateway → jalankan start.bat lagi).' }),
+            h('li', { text: 'Kembali ke sini, tekan "Tes koneksi".' }),
+          ]),
+          'Kenapa tidak bisa diisi dari sini? Supaya key provider (yang terhubung ke tagihan) tidak pernah lewat browser dan tidak tersimpan di database.',
+        ],
+        { open: true },
+      ),
+    );
+  }
+
+  // ========================================================= 04 .env
+  async function envPage() {
+    const env = await api('GET', '/admin/env-status');
+    const groups = [...new Set(env.vars.map((v) => v.group))];
+    const problems = env.vars.filter((v) => v.required && v.state !== 'ok');
+    return h(
+      'div',
+      { class: 'stack' },
+      pageHead('04 · File .env', 'Status .env Gateway', 'Konsol hanya MEMBACA status (terisi / kosong / placeholder). Nilai rahasia tidak pernah ditampilkan dan file .env tidak diubah dari sini.'),
+      problems.length ? h('div', { class: 'callout callout-err' }, h('strong', { text: 'Ada variabel wajib yang bermasalah' }), problems.map((p) => p.name).join(', ')) : h('div', { class: 'callout callout-ok' }, h('strong', { text: 'Semua variabel wajib terisi' }), 'Gateway hanya bisa start bila variabel wajib valid.'),
+      groups.map((g) =>
+        h(
+          'section',
+          { class: 'card' },
+          h('div', { class: 'card-head' }, h('h2', { text: g })),
+          table(
+            [
+              { label: 'Variabel', render: (v) => h('div', {}, h('code', { text: v.name }), v.required ? h('span', { class: 'sub', text: 'wajib' }) : h('span', { class: 'sub', text: 'opsional' })) },
+              { label: 'Status', render: (v) => (v.secret ? badge(v.state) : h('code', { text: String(v.value) })) },
+              { label: 'Keterangan', render: (v) => v.help },
+            ],
+            env.vars.filter((v) => v.group === g),
+          ),
+        ),
+      ),
+      h(
+        'section',
+        { class: 'card' },
+        h('div', { class: 'card-head' }, h('h2', { text: 'Buat nilai rahasia baru' })),
+        h('p', { class: 'muted', text: 'Dibuat di browser ini (crypto acak), tidak dikirim ke server. Tempel ke .env lalu restart.' }),
+        h(
+          'div',
+          { class: 'actions' },
+          btn('RUNTIME_TOKEN baru', async () => {
+            await showSecret({ title: 'RUNTIME_TOKEN baru', envLine: 'RUNTIME_TOKEN', secret: genUrlSafe(48), note: 'Ganti baris RUNTIME_TOKEN di .env, lalu restart Gateway DAN runtime model lokal bersamaan.' });
+          }),
+          ' ',
+          btn('GATEWAY_KEY_PEPPER baru', async () => {
+            const ok = await confirm({ title: 'Ganti GATEWAY_KEY_PEPPER?', message: 'Mengganti pepper membuat SEMUA key lgw_ yang ada (termasuk admin key Anda dan key agent MCP) tidak valid. Hanya untuk instalasi baru atau insiden keamanan besar.', confirmLabel: 'Saya paham, buat nilai', danger: true, typeToConfirm: 'GANTI PEPPER' });
+            if (ok) await showSecret({ title: 'GATEWAY_KEY_PEPPER baru', envLine: 'GATEWAY_KEY_PEPPER', secret: genUrlSafe(48), note: 'Setelah diganti: buat admin key baru (CLI), lalu provision ulang key agent dari Konsol MCP dengan opsi "buat ulang semua".' });
+          }, 'danger'),
+        ),
+      ),
+      help('Cara aman mengubah .env', [
+        h('ol', {}, [
+          h('li', { text: 'Salin dulu .env menjadi .env.bak (cadangan).' }),
+          h('li', { text: 'Ubah satu baris saja; format NAMA=nilai tanpa spasi di sekitar "=" dan tanpa komentar di akhir baris.' }),
+          h('li', { text: 'Restart Gateway. Kalau gagal start, pesan error menyebut nama variabel yang salah (nilainya tidak pernah dicetak).' }),
+          h('li', { text: 'Jangan pernah commit .env ke git atau mengirimnya lewat chat.' }),
+        ]),
+      ]),
+    );
+  }
+
+  // ======================================================== login & boot
+  const HOW_TO = [
+    h('p', { text: 'Admin key dibuat sekali lewat terminal (Anaconda Prompt) di folder llm-genai:' }),
+    h('p', {}, h('code', { text: 'python scripts\\manage.py create-admin-key --name konsol' })),
+    h('p', { text: 'Key tampil sekali — simpan di password manager. Key admin tidak bisa dibuat dari konsol (sengaja).' }),
+  ];
+
+  function showLogin(reason) {
+    root.replaceChildren(
+      Kit.loginScreen({
+        title: 'Konsol LLM Gateway',
+        subtitle: 'Kredensial · project · kuota',
+        intro: reason || 'Masukkan admin key Gateway untuk mengelola project, API key, kuota, dan memeriksa status .env.',
+        keyLabel: 'Admin key Gateway',
+        keyPattern: 'lgw_xxxxxxxx_…',
+        howTo: HOW_TO,
+        onSubmit: async (key) => {
+          try {
+            await api('GET', '/admin/projects', undefined, { key });
+          } catch (e) {
+            if (e.status === 403) throw new Error('Key valid, tetapi bukan role admin. Gunakan admin key.');
+            if (e.status === 401) throw new Error('Key tidak dikenali / sudah dicabut.');
+            throw e;
+          }
+          Kit.unlock(key);
+          boot();
+        },
+      }),
+    );
+  }
+
+  function boot() {
+    const { root: app, go } = Kit.shell({
+      title: 'Konsol LLM Gateway',
+      subtitle: location.host,
+      onLogout: () => Kit.lock('Sesi dikunci. Admin key sudah dihapus dari memori.'),
+      pages: [
+        { id: 'start', label: 'Mulai di sini', hint: 'alur key & checklist', render: startPage },
+        { id: 'projects', label: 'Project & Key', hint: 'buat, rotasi, cabut, kuota', render: projectsPage },
+        { id: 'providers', label: 'Provider', hint: 'OpenAI dll. & tes koneksi', render: providersPage },
+        { id: 'env', label: 'File .env', hint: 'status variabel & secret baru', render: envPage },
+      ],
+    });
+    root.replaceChildren(app);
+    go('start');
+  }
+
+  Kit.setOnLock(showLogin);
+  showLogin();
+})();

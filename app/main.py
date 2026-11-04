@@ -8,7 +8,7 @@ from app.core.lifespan import lifespan
 from app.middlewares.body_limit import BodySizeLimitMiddleware
 from app.middlewares.error_handler import register_error_handlers
 from app.middlewares.request_context import RequestContextMiddleware
-from app.routes import admin, health, v1
+from app.routes import admin, console, health, v1
 
 VERSION = "0.1.0"
 
@@ -45,6 +45,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(health.metrics_router)
     app.include_router(v1.router)
     app.include_router(admin.router)
+    app.include_router(console.router)
     return app
 
 

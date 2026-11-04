@@ -3,6 +3,17 @@
 Format mengikuti [Keep a Changelog](https://keepachangelog.com/id-ID/1.1.0/), versi mengikuti
 [SemVer](https://semver.org/lang/id/).
 
+## [Unreleased]
+
+### Ditambahkan
+- **Admin Console** `http://127.0.0.1:8000/console` (HTML/JS/CSS statis tanpa build, CSP
+  `script-src 'self'`, `frame-ancestors 'none'`, `no-store`): hanya dari peer loopback + Host lokal.
+  Masuk dengan admin key `lgw_` (hanya di memori tab, kunci otomatis 15 menit idle). Menu: Mulai
+  (alur key + checklist), Project & Key (buat/rotasi/cabut key, kuota USD, model diizinkan,
+  tangguhkan/arsipkan), Provider (status env API key + tes koneksi), File .env. Penjelasan di tiap
+  halaman; nilai secret tidak pernah ditampilkan atau diubah dari konsol.
+- `GET /admin/env-status`: status variabel `.env` & env API key per provider (nama + keadaan saja).
+
 ## [0.1.0] — 2026-10-28
 
 Rilis pertama (M1–M6, TASK-01 s/d TASK-23).
