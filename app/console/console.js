@@ -440,7 +440,7 @@
           { label: 'Token input', class: 'num', render: (r) => cell(r, num(r.prompt_tokens)) },
           { label: 'Token output', class: 'num', render: (r) => cell(r, num(r.completion_tokens)) },
           { label: 'Total token', class: 'num', render: (r) => cell(r, num(r.prompt_tokens + r.completion_tokens)) },
-          { label: 'Biaya', class: 'num', render: (r) => cell(r, usd4(r.cost_usd)) },
+          { label: 'Estimasi biaya', class: 'num', render: (r) => cell(r, usd4(r.cost_usd)) },
         ],
         withTotal,
         { empty: 'Belum ada pemakaian di periode ini.' },
@@ -448,15 +448,55 @@
     );
   }
 
+  const PROVIDER_LABEL = { openai: 'OpenAI', anthropic: 'Anthropic (Claude)' };
+  const ADMIN_KEY_ENV = { openai: 'OPENAI_ADMIN_KEY', anthropic: 'ANTHROPIC_ADMIN_KEY' };
+
+  /** Biaya aktual dari Cost/Usage API provider vs estimasi Gateway (per provider). */
+  function actualSection(billing, byProvider, projectFiltered) {
+    if (billing instanceof Error) {
+      return h('section', { class: 'card' }, h('div', { class: 'card-head' }, h('h2', { text: 'Biaya aktual dari provider' })), h('div', { class: 'callout callout-err', text: `Gagal memuat: ${billing.message}` }));
+    }
+    const estimateOf = (code) => Number((byProvider.find((r) => r.provider === code) || {}).cost_usd || 0);
+    const rows = billing.providers.map((p) => ({
+      ...p,
+      label: PROVIDER_LABEL[p.provider] || p.provider,
+      estimate: estimateOf(p.provider),
+      actual: p.ok ? Number(p.cost_usd) : null,
+    }));
+    const statusOf = (p) => (p.ok ? badge('active', 'Tersambung') : p.configured ? h('span', { class: 'sub', text: p.error }) : h('span', { class: 'sub' }, 'Isi ', h('code', { text: ADMIN_KEY_ENV[p.provider] }), ' di .env'));
+    const diff = (p) => (p.actual === null ? '—' : `${p.actual - p.estimate >= 0 ? '+' : ''}${usd4(p.actual - p.estimate)}`);
+    return h(
+      'section',
+      { class: 'card' },
+      h('div', { class: 'card-head' }, h('h2', { text: 'Biaya aktual dari provider' })),
+      projectFiltered ? h('div', { class: 'callout callout-warn', text: 'Filter project aktif: angka aktual provider tetap mencakup seluruh organisasi, jadi tidak sebanding dengan estimasi project ini.' }) : null,
+      UsageCharts.costCompare(rows),
+      table(
+        [
+          { label: 'Provider', render: (p) => h('strong', { text: p.label }) },
+          { label: 'Status', render: statusOf },
+          { label: 'Estimasi Gateway', class: 'num', render: (p) => usd4(p.estimate) },
+          { label: 'Aktual provider', class: 'num', render: (p) => (p.actual === null ? '—' : usd4(p.actual)) },
+          { label: 'Selisih', class: 'num', render: diff },
+          { label: 'Token aktual (in/out/cache)', class: 'num', render: (p) => (p.tokens ? `${num(p.tokens.input)} / ${num(p.tokens.output)} / ${num(p.tokens.cached)}` : '—') },
+          { label: 'Request aktual', class: 'num', render: (p) => (p.requests === null || p.requests === undefined ? '—' : num(p.requests)) },
+        ],
+        rows,
+      ),
+      h('p', { class: 'muted', text: 'Aktual = data tagihan resmi dari Cost API & Usage API provider (per organisasi, termasuk pemakaian di luar Gateway, per hari UTC, tertunda ±5 menit, di-cache 5 menit).' }),
+    );
+  }
+
   async function usagePage({ refresh }) {
     const f = usageFilter;
     const qs = (group) => `/admin/usage?from=${f.from}&to=${f.to}&group_by=${group}` + (f.project ? `&project_id=${f.project}` : '');
-    const [projects, byProject, byProvider, byModel, byDay] = await Promise.all([
+    const [projects, byProject, byProvider, byModel, byDay, billing] = await Promise.all([
       api('GET', '/admin/projects'),
       api('GET', qs('project')),
       api('GET', qs('provider')),
       api('GET', qs('model')),
       api('GET', qs('day')),
+      api('GET', `/admin/provider-billing?from=${f.from}&to=${f.to}`).catch((e) => e),
     ]);
     const total = sumUsage(byProject.data);
 
@@ -482,6 +522,12 @@
       { class: 'stack' },
       pageHead('05 · Usage', 'Pemakaian token & biaya', 'Rekap request, token, dan biaya per project, per provider (OpenAI, Gemini, Claude, lokal), dan per model. Diperbarui tiap ±10 menit.'),
       h(
+        'div',
+        { class: 'callout callout-warn' },
+        h('strong', { text: 'Biaya di bawah adalah ESTIMASI. ' }),
+        'Dihitung Gateway dari token × harga per 1 juta token di katalog model (Admin API /admin/models). Tagihan resmi bisa berbeda (cache write, tarif bertingkat, pajak); lihat "Biaya aktual dari provider".',
+      ),
+      h(
         'section',
         { class: 'card' },
         h('div', { class: 'usage-filter' }, field('Dari', fromInput), field('Sampai', toInput), field('Project', projectSelect), action('Tampilkan', apply, 'primary')),
@@ -492,16 +538,24 @@
           stat('Token input', num(total.prompt_tokens)),
           stat('Token output', num(total.completion_tokens)),
           stat('Total token', num(total.prompt_tokens + total.completion_tokens)),
-          stat('Total biaya', usd4(total.cost_usd)),
+          stat('Estimasi biaya', usd4(total.cost_usd), 'perkiraan Gateway'),
         ),
       ),
+      h(
+        'section',
+        { class: 'card' },
+        h('div', { class: 'card-head' }, h('h2', { text: 'Token per hari' })),
+        UsageCharts.tokensByDay(byDay.data, f.from, f.to),
+      ),
+      actualSection(billing, byProvider.data, !!f.project),
       usageTable('Per project', 'project', byProject.data, total),
       usageTable('Per provider', 'provider', byProvider.data, sumUsage(byProvider.data)),
       usageTable('Per model', 'model', byModel.data, sumUsage(byModel.data)),
       usageTable('Per hari', 'day', byDay.data, sumUsage(byDay.data)),
       help('Catatan', [
         'Usage dicatat per project, bukan per API key. Kalau perlu rekap per aplikasi, beri tiap aplikasi project sendiri.',
-        'Provider "local" = model lokal (biaya $0). Biaya remote dihitung dari harga model yang tercatat di Gateway.',
+        'Provider "local" = model lokal (biaya $0). Biaya remote = estimasi dari harga model yang tercatat di Gateway; request sebelum harga diisi tetap $0.',
+        'Biaya aktual butuh admin key organisasi di .env Gateway: OPENAI_ADMIN_KEY (sk-admin-…) dan ANTHROPIC_ADMIN_KEY (sk-ant-admin01-…), lalu restart Gateway. Key ini hanya dipakai membaca laporan.',
       ]),
     );
   }

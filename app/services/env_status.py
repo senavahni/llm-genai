@@ -104,6 +104,20 @@ def env_vars(settings: Settings) -> list[dict[str, Any]]:
             state=secret_state(_secret(settings, "gemini_api_key")),
             required=False,
         ),
+        _var(
+            "OPENAI_ADMIN_KEY",
+            prov,
+            "Admin key organisasi OpenAI (sk-admin-...) untuk biaya & usage aktual di menu Usage.",
+            state=secret_state(_secret(settings, "openai_admin_key")),
+            required=False,
+        ),
+        _var(
+            "ANTHROPIC_ADMIN_KEY",
+            prov,
+            "Admin key Anthropic (sk-ant-admin01-...) untuk biaya & usage aktual di menu Usage.",
+            state=secret_state(_secret(settings, "anthropic_admin_key")),
+            required=False,
+        ),
     ]
 
 

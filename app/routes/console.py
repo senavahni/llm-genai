@@ -11,7 +11,12 @@ from fastapi import APIRouter, Request
 from fastapi.responses import FileResponse, PlainTextResponse, Response
 
 CONSOLE_DIR = Path(__file__).resolve().parents[1] / "console"
-ASSETS = {"console.js": "text/javascript", "console.css": "text/css", "kit.js": "text/javascript"}
+ASSETS = {
+    "console.js": "text/javascript",
+    "console.css": "text/css",
+    "kit.js": "text/javascript",
+    "usage-charts.js": "text/javascript",
+}
 LOOPBACK_PEERS = {"127.0.0.1", "::1"}
 LOCAL_HOSTS = {"127.0.0.1", "localhost", "[::1]"}
 SECURITY_HEADERS = {

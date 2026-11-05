@@ -52,6 +52,9 @@ class Settings(BaseSettings):
     openai_api_key: SecretStr | None = None
     anthropic_api_key: SecretStr | None = None
     gemini_api_key: SecretStr | None = None
+    # admin key organisasi (opsional) untuk biaya/usage AKTUAL dari provider di halaman Usage
+    openai_admin_key: SecretStr | None = None
+    anthropic_admin_key: SecretStr | None = None
 
     trust_proxy: bool = False
     storage_dir: str = "./storage"

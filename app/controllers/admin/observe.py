@@ -3,13 +3,16 @@ from datetime import date, datetime
 from typing import Any
 
 from fastapi import Request
+from pydantic import SecretStr
 
 from app.controllers.admin import actor, optional_registry, registry
 from app.core.database import SessionLocal
 from app.schemas.admin import RequestFilter, UsageQuery
 from app.schemas.common import AuthContext
 from app.services import admin_query_service as q
+from app.services import provider_billing as billing
 from app.services import runtime_admin_service as rt
+from app.utils.errors import InvalidRequestError
 from app.utils.helper import utcnow
 
 
@@ -37,6 +40,31 @@ async def usage(
     )
     async with SessionLocal() as s:
         return await q.usage(s, query)
+
+
+PROVIDER_BILLING_MAX_DAYS = 366
+
+
+async def provider_billing(
+    request: Request, date_from: date | None, date_to: date | None
+) -> dict[str, Any]:
+    to = date_to or utcnow().date()
+    start = date_from or to.replace(day=1)
+    if start > to or (to - start).days >= PROVIDER_BILLING_MAX_DAYS:
+        raise InvalidRequestError(
+            f"rentang tanggal harus valid dan <= {PROVIDER_BILLING_MAX_DAYS} hari"
+        )
+    settings = request.app.state.settings
+    keys = {
+        "openai": _secret(settings.openai_admin_key),
+        "anthropic": _secret(settings.anthropic_admin_key),
+    }
+    providers = await billing.provider_billing(request.app.state.http, keys, start, to)
+    return {"from": start.isoformat(), "to": to.isoformat(), "providers": providers}
+
+
+def _secret(value: SecretStr | None) -> str | None:
+    return value.get_secret_value() or None if value is not None else None
 
 
 async def audit_logs(**filters: Any) -> dict[str, Any]:
