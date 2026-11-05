@@ -69,6 +69,16 @@ async def test_chat_payload_has_no_none_fields_and_maps_response(mock_http, sett
     )
 
 
+async def test_drop_params_removes_sampling_fields_unsupported_by_model(mock_http, settings):
+    # gpt-5 menolak temperature != 1 → config model {"drop_params": [...]} membuang field tsb
+    http, rec = mock_http(lambda r: json_response(CHAT_OK))
+    model = model_cfg("openai", "gpt-5", config={"drop_params": ["temperature", "top_p"]})
+    await _provider(http, settings).chat(model, _req(temperature=0, top_p=0.9, seed=7))
+    sent = rec.last_json
+    assert "temperature" not in sent and "top_p" not in sent
+    assert sent["seed"] == 7
+
+
 async def test_tools_json_mode_image_and_provider_options_passthrough(mock_http, settings):
     http, rec = mock_http(
         lambda r: json_response(

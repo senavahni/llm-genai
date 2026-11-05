@@ -100,6 +100,9 @@ class OpenAIProvider(BaseProvider):
             }
         )
         payload.update(self._passthrough(req.provider_options))
+        # field yang ditolak model tertentu (mis. gpt-5: temperature selain default) → dibuang
+        for name in model.config.get("drop_params", ()):
+            payload.pop(name, None)
         return payload
 
     def build_completion_payload(

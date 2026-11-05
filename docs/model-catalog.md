@@ -144,7 +144,8 @@ Langkah (contoh lengkap di `docs/admin-api.http`, bagian providers):
    `supports_vision`, `supports_json_mode`), `context_window`, `max_output_tokens`, dan harga
    `input_cost_per_mtok` / `output_cost_per_mtok` (USD per 1 juta token). Bila provider memakai
    `max_completion_tokens` alih-alih `max_tokens`, isi `"config": {"max_tokens_param":
-   "max_completion_tokens"}` pada model.
+   "max_completion_tokens"}` pada model. Field yang ditolak model (mis. gpt-5 hanya menerima
+   `temperature` default) dibuang lewat `"drop_params": ["temperature", "top_p"]`.
 4. **Pakai di route**: `PATCH /admin/routes/{alias}` (mis. tambahkan `deepseek/chat` ke `smart`)
    atau buat route baru `POST /admin/routes`.
 5. **Izinkan di project**: `PUT /admin/projects/{id}/allowed-models` harus mencakup route

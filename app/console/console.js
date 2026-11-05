@@ -407,6 +407,105 @@
     );
   }
 
+  // ========================================================= 05 Usage
+  const today = () => new Date().toISOString().slice(0, 10);
+  const usageFilter = { from: today().slice(0, 8) + '01', to: today(), project: '' };
+  const num = (v) => Number(v || 0).toLocaleString('id-ID');
+  const usd4 = (v) => `$${Number(v || 0).toFixed(4)}`;
+
+  const sumUsage = (rows) =>
+    rows.reduce(
+      (t, r) => ({
+        requests: t.requests + r.requests,
+        errors: t.errors + r.errors,
+        prompt_tokens: t.prompt_tokens + r.prompt_tokens,
+        completion_tokens: t.completion_tokens + r.completion_tokens,
+        cost_usd: t.cost_usd + Number(r.cost_usd),
+      }),
+      { requests: 0, errors: 0, prompt_tokens: 0, completion_tokens: 0, cost_usd: 0 },
+    );
+
+  function usageTable(title, key, rows, total) {
+    const withTotal = rows.length ? rows.concat([{ ...total, [key]: 'TOTAL', isTotal: true }]) : rows;
+    const cell = (r, v) => (r.isTotal ? h('strong', { text: v }) : v);
+    return h(
+      'section',
+      { class: 'card' },
+      h('div', { class: 'card-head' }, h('h2', { text: title })),
+      table(
+        [
+          { label: title.replace('Per ', ''), render: (r) => (r.isTotal ? h('strong', { text: 'TOTAL' }) : h('code', { text: r[key] })) },
+          { label: 'Request', class: 'num', render: (r) => cell(r, num(r.requests)) },
+          { label: 'Error', class: 'num', render: (r) => cell(r, num(r.errors)) },
+          { label: 'Token input', class: 'num', render: (r) => cell(r, num(r.prompt_tokens)) },
+          { label: 'Token output', class: 'num', render: (r) => cell(r, num(r.completion_tokens)) },
+          { label: 'Total token', class: 'num', render: (r) => cell(r, num(r.prompt_tokens + r.completion_tokens)) },
+          { label: 'Biaya', class: 'num', render: (r) => cell(r, usd4(r.cost_usd)) },
+        ],
+        withTotal,
+        { empty: 'Belum ada pemakaian di periode ini.' },
+      ),
+    );
+  }
+
+  async function usagePage({ refresh }) {
+    const f = usageFilter;
+    const qs = (group) => `/admin/usage?from=${f.from}&to=${f.to}&group_by=${group}` + (f.project ? `&project_id=${f.project}` : '');
+    const [projects, byProject, byProvider, byModel, byDay] = await Promise.all([
+      api('GET', '/admin/projects'),
+      api('GET', qs('project')),
+      api('GET', qs('provider')),
+      api('GET', qs('model')),
+      api('GET', qs('day')),
+    ]);
+    const total = sumUsage(byProject.data);
+
+    const fromInput = h('input', { type: 'date', class: 'input', value: f.from });
+    const toInput = h('input', { type: 'date', class: 'input', value: f.to });
+    const projectSelect = h(
+      'select',
+      { class: 'input' },
+      h('option', { value: '', text: 'Semua project' }),
+      projects.data.map((p) => h('option', { value: p.id, text: p.slug, selected: p.id === f.project })),
+    );
+    const apply = () => {
+      if (!fromInput.value || !toInput.value) throw new Error('Isi tanggal dari & sampai.');
+      if (fromInput.value > toInput.value) throw new Error('Tanggal "dari" harus sebelum "sampai".');
+      Object.assign(usageFilter, { from: fromInput.value, to: toInput.value, project: projectSelect.value });
+      refresh();
+    };
+    const field = (label, input) => h('label', { class: 'field' }, h('span', { class: 'field-label', text: label }), input);
+    const stat = (label, value, sub) => h('div', { class: 'stat' }, h('span', { class: 'sub', text: label }), h('strong', { text: value }), sub ? h('span', { class: 'sub', text: sub }) : null);
+
+    return h(
+      'div',
+      { class: 'stack' },
+      pageHead('05 · Usage', 'Pemakaian token & biaya', 'Rekap request, token, dan biaya per project, per provider (OpenAI, Gemini, Claude, lokal), dan per model. Diperbarui tiap ±10 menit.'),
+      h(
+        'section',
+        { class: 'card' },
+        h('div', { class: 'usage-filter' }, field('Dari', fromInput), field('Sampai', toInput), field('Project', projectSelect), action('Tampilkan', apply, 'primary')),
+        h(
+          'div',
+          { class: 'stats' },
+          stat('Total request', num(total.requests), `${num(total.errors)} error`),
+          stat('Token input', num(total.prompt_tokens)),
+          stat('Token output', num(total.completion_tokens)),
+          stat('Total token', num(total.prompt_tokens + total.completion_tokens)),
+          stat('Total biaya', usd4(total.cost_usd)),
+        ),
+      ),
+      usageTable('Per project', 'project', byProject.data, total),
+      usageTable('Per provider', 'provider', byProvider.data, sumUsage(byProvider.data)),
+      usageTable('Per model', 'model', byModel.data, sumUsage(byModel.data)),
+      usageTable('Per hari', 'day', byDay.data, sumUsage(byDay.data)),
+      help('Catatan', [
+        'Usage dicatat per project, bukan per API key. Kalau perlu rekap per aplikasi, beri tiap aplikasi project sendiri.',
+        'Provider "local" = model lokal (biaya $0). Biaya remote dihitung dari harga model yang tercatat di Gateway.',
+      ]),
+    );
+  }
+
   // ======================================================== login & boot
   const HOW_TO = [
     h('p', { text: 'Admin key dibuat sekali lewat terminal (Anaconda Prompt) di folder llm-genai:' }),
@@ -448,6 +547,7 @@
         { id: 'projects', label: 'Project & Key', hint: 'buat, rotasi, cabut, kuota', render: projectsPage },
         { id: 'providers', label: 'Provider', hint: 'OpenAI dll. & tes koneksi', render: providersPage },
         { id: 'env', label: 'File .env', hint: 'status variabel & secret baru', render: envPage },
+        { id: 'usage', label: 'Usage', hint: 'token & biaya per project/provider', render: usagePage },
       ],
     });
     root.replaceChildren(app);
