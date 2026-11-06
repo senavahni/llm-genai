@@ -154,7 +154,9 @@ models:
      input_cost_per_mtok: 0.25, output_cost_per_mtok: 2.00,
      config: {max_tokens_param: max_completion_tokens, drop_params: [temperature, top_p], cached_input_cost_per_mtok: 0.025}}
   - {alias: openai/text-embedding-3-small, provider: openai, upstream_name: text-embedding-3-small, model_type: embedding,
-     supports_streaming: false, embedding_dimensions: 1536}
+     supports_streaming: false, embedding_dimensions: 1536, input_cost_per_mtok: 0.02, output_cost_per_mtok: 0}
+  - {alias: openai/text-embedding-3-large, provider: openai, upstream_name: text-embedding-3-large, model_type: embedding,
+     supports_streaming: false, embedding_dimensions: 3072, input_cost_per_mtok: 0.13, output_cost_per_mtok: 0}
   - {alias: gemini/flash, provider: gemini, upstream_name: gemini-2.5-flash, model_type: chat, tier: light,
      supports_tools: true, supports_vision: true, supports_json_mode: true}
 

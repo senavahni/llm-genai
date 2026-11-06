@@ -51,7 +51,8 @@ dan oleh `manage.py verify-models`.
 | `anthropic/claude-haiku` | `claude-haiku-5-5` | light | tools, vision, JSON, konteks 200K |
 | `openai/gpt-heavy` | `gpt-5` | heavy | tools, vision, JSON |
 | `openai/gpt-light` | `gpt-5-mini` | light | tools, vision, JSON |
-| `openai/text-embedding-3-small` | `text-embedding-3-small` | – | embedding 1536 dimensi |
+| `openai/text-embedding-3-small` | `text-embedding-3-small` | – | embedding 1536 dimensi, $0.02 / 1M token |
+| `openai/text-embedding-3-large` | `text-embedding-3-large` | – | embedding 3072 dimensi, $0.13 / 1M token |
 | `gemini/flash` | `gemini-2.5-flash` | light | tools, vision, JSON |
 
 Provider aktif hanya bila key-nya diisi di `.env` (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`,
