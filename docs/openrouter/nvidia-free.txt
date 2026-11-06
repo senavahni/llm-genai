@@ -1,0 +1,586 @@
+https://openrouter.ai/nvidia/nemotron-3-ultra-550b-a55b:free
+
+# OpenRouter APIs — NVIDIA: Nemotron 3 Ultra (free) (nvidia/nemotron-3-ultra-550b-a55b)
+
+Guide for calling every confirmed OpenRouter API that serves `nvidia/nemotron-3-ultra-550b-a55b`.
+
+Model page: https://openrouter.ai/nvidia/nemotron-3-ultra-550b-a55b
+Create an API key: https://openrouter.ai/settings/keys
+
+## Pricing
+
+Standard-variant prices for `nvidia/nemotron-3-ultra-550b-a55b`, per provider, in the unit each provider bills (tokens, images, seconds of video, or characters of audio). Pay-as-you-go with no markup on the provider's price.
+
+- DeepInfra: $0.40/M tokens input, $1.76/M tokens output (plus 1 more; see the model page for the full price list)
+- DeepInfra: $0.50/M tokens input, $2.20/M tokens output (plus 1 more; see the model page for the full price list)
+- Baseten: $0.60/M tokens input, $2.40/M tokens output (plus 1 more; see the model page for the full price list)
+- Venice: $0.625/M tokens input, $3.125/M tokens output (plus 1 more; see the model page for the full price list)
+
+Full price table, including other variants and per-request charges: https://openrouter.ai/nvidia/nemotron-3-ultra-550b-a55b
+How OpenRouter prices requests: https://openrouter.ai/pricing
+
+## EU in-region routing
+
+`nvidia/nemotron-3-ultra-550b-a55b` is not currently available through EU in-region routing.
+
+Docs: https://openrouter.ai/docs/guides/features/in-region-routing
+
+## Authentication
+
+Send this header with every request:
+
+- Authorization: Bearer $OPENROUTER_API_KEY
+
+## Text / Chat Completions API
+
+Generate text with `nvidia/nemotron-3-ultra-550b-a55b` through OpenRouter's Chat Completions API.
+
+Docs: https://openrouter.ai/docs/api/api-reference/chat/create-a-chat-completion
+
+### Endpoint
+
+POST https://openrouter.ai/api/v1/chat/completions
+
+Headers:
+- Content-Type: application/json
+
+### Request fields (nvidia/nemotron-3-ultra-550b-a55b)
+
+- model: string (required) — `"nvidia/nemotron-3-ultra-550b-a55b"`
+- messages: array (required) — ordered conversation messages with `role` and `content`
+- stream: boolean (optional) — return Server-Sent Events as tokens are generated
+- max_tokens: optional — accepted by this model; see the API reference for its value shape
+- reasoning: optional — accepted by this model; see the API reference for its value shape
+- reasoning_effort: optional — accepted by this model; see the API reference for its value shape
+- seed: optional — accepted by this model; see the API reference for its value shape
+- temperature: optional — accepted by this model; see the API reference for its value shape
+- tool_choice: optional — accepted by this model; see the API reference for its value shape
+- tools: optional — accepted by this model; see the API reference for its value shape
+- top_p: optional — accepted by this model; see the API reference for its value shape
+
+The model-specific optional fields above come from this model's advertised capabilities.
+`stream` and `provider` routing preferences are API controls accepted independently of that
+model capability list.
+
+### Response
+
+Without `stream`, the response is a Chat Completions JSON object:
+
+```json
+{
+  "id": "gen-abc123",
+  "choices": [{ "message": { "role": "assistant", "content": "..." } }],
+  "usage": { "prompt_tokens": 12, "completion_tokens": 24, "total_tokens": 36, "cost": 0.001 }
+}
+```
+
+With `stream: true`, the response is `text/event-stream`: read each `data:` JSON chunk until
+`data: [DONE]`. The final usage chunk carries token counts and cost when usage is requested.
+
+### Examples
+
+#### Chat completion
+
+```bash
+curl -X POST https://openrouter.ai/api/v1/chat/completions \
+  -H "Authorization: Bearer $OPENROUTER_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+  "model": "nvidia/nemotron-3-ultra-550b-a55b",
+  "messages": [
+    {
+      "role": "user",
+      "content": "What is the meaning of life?"
+    }
+  ]
+}'
+```
+
+### Error differences
+
+- 400 — malformed messages or a parameter this model does not support
+- 502 — the upstream text generation failed
+
+## Errors
+
+Failures return `{"error": {"code": <number>, "message": <string>}}` with the HTTP status:
+
+- 400 — malformed request or an unsupported parameter
+- 401 — missing or invalid API key
+- 402 — insufficient credits
+- 403 — spend limit reached, key disabled, or access blocked
+- 404 — unknown model or no provider can serve the request
+- 429 — rate limited; retry with backoff
+- 502 — the operation failed upstream; failed generations are not billed
+
+---
+
+Canonical version of this document: https://openrouter.ai/nvidia/nemotron-3-ultra-550b-a55b/llms.txt
+
+
+
+https://openrouter.ai/nvidia/nemotron-3.5-super-vl:free?view=api#providers
+
+# OpenRouter APIs — NVIDIA: Nemotron 3.5 Super VL (free) (nvidia/nemotron-3.5-super-vl)
+
+Guide for calling every confirmed OpenRouter API that serves `nvidia/nemotron-3.5-super-vl`.
+
+Model page: https://openrouter.ai/nvidia/nemotron-3.5-super-vl
+Create an API key: https://openrouter.ai/settings/keys
+
+## Pricing
+
+Standard-variant prices for `nvidia/nemotron-3.5-super-vl`, per provider, in the unit each provider bills (tokens, images, seconds of video, or characters of audio). Pay-as-you-go with no markup on the provider's price.
+
+- Darkbloom: $0.06/M tokens input, $0.35/M tokens output (plus 1 more; see the model page for the full price list)
+- Crusoe: $0.10/M tokens input, $0.40/M tokens output (plus 1 more; see the model page for the full price list)
+- io.net: $0.15/M tokens input, $0.50/M tokens output (plus 1 more; see the model page for the full price list)
+- Together: $0.15/M tokens input, $0.50/M tokens output (plus 1 more; see the model page for the full price list)
+- DeepInfra: $0.15/M tokens input, $0.50/M tokens output (plus 1 more; see the model page for the full price list)
+- CoreWeave: $0.15/M tokens input, $0.50/M tokens output (plus 1 more; see the model page for the full price list)
+- Venice: $0.20/M tokens input, $0.50/M tokens output (plus 1 more; see the model page for the full price list)
+- Baseten: $0.20/M tokens input, $0.50/M tokens output (plus 1 more; see the model page for the full price list)
+- Nebius Token Factory: $0.30/M tokens input, $0.90/M tokens output (plus 1 more; see the model page for the full price list)
+
+Full price table, including other variants and per-request charges: https://openrouter.ai/nvidia/nemotron-3.5-super-vl
+How OpenRouter prices requests: https://openrouter.ai/pricing
+
+## EU in-region routing
+
+`nvidia/nemotron-3.5-super-vl` is not currently available through EU in-region routing.
+
+Docs: https://openrouter.ai/docs/guides/features/in-region-routing
+
+## Authentication
+
+Send this header with every request:
+
+- Authorization: Bearer $OPENROUTER_API_KEY
+
+## Text / Chat Completions API
+
+Generate text with `nvidia/nemotron-3.5-super-vl` through OpenRouter's Chat Completions API.
+
+Docs: https://openrouter.ai/docs/api/api-reference/chat/create-a-chat-completion
+
+### Endpoint
+
+POST https://openrouter.ai/api/v1/chat/completions
+
+Headers:
+- Content-Type: application/json
+
+### Request fields (nvidia/nemotron-3.5-super-vl)
+
+- model: string (required) — `"nvidia/nemotron-3.5-super-vl"`
+- messages: array (required) — ordered conversation messages with `role` and `content`
+- stream: boolean (optional) — return Server-Sent Events as tokens are generated
+- max_tokens: optional — accepted by this model; see the API reference for its value shape
+- reasoning: optional — accepted by this model; see the API reference for its value shape
+- response_format: optional — accepted by this model; see the API reference for its value shape
+- seed: optional — accepted by this model; see the API reference for its value shape
+- temperature: optional — accepted by this model; see the API reference for its value shape
+- tool_choice: optional — accepted by this model; see the API reference for its value shape
+- tools: optional — accepted by this model; see the API reference for its value shape
+- top_p: optional — accepted by this model; see the API reference for its value shape
+
+The model-specific optional fields above come from this model's advertised capabilities.
+`stream` and `provider` routing preferences are API controls accepted independently of that
+model capability list.
+
+### Response
+
+Without `stream`, the response is a Chat Completions JSON object:
+
+```json
+{
+  "id": "gen-abc123",
+  "choices": [{ "message": { "role": "assistant", "content": "..." } }],
+  "usage": { "prompt_tokens": 12, "completion_tokens": 24, "total_tokens": 36, "cost": 0.001 }
+}
+```
+
+With `stream: true`, the response is `text/event-stream`: read each `data:` JSON chunk until
+`data: [DONE]`. The final usage chunk carries token counts and cost when usage is requested.
+
+### Examples
+
+#### Chat completion
+
+```bash
+curl -X POST https://openrouter.ai/api/v1/chat/completions \
+  -H "Authorization: Bearer $OPENROUTER_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+  "model": "nvidia/nemotron-3.5-super-vl",
+  "messages": [
+    {
+      "role": "user",
+      "content": "What is the meaning of life?"
+    }
+  ]
+}'
+```
+
+### Error differences
+
+- 400 — malformed messages or a parameter this model does not support
+- 502 — the upstream text generation failed
+
+## Errors
+
+Failures return `{"error": {"code": <number>, "message": <string>}}` with the HTTP status:
+
+- 400 — malformed request or an unsupported parameter
+- 401 — missing or invalid API key
+- 402 — insufficient credits
+- 403 — spend limit reached, key disabled, or access blocked
+- 404 — unknown model or no provider can serve the request
+- 429 — rate limited; retry with backoff
+- 502 — the operation failed upstream; failed generations are not billed
+
+---
+
+Canonical version of this document: https://openrouter.ai/nvidia/nemotron-3.5-super-vl/llms.txt
+
+
+https://openrouter.ai/nvidia/nemotron-3.5-lightning:free
+
+# OpenRouter APIs — NVIDIA: Nemotron 3.5 Lightning (free) (nvidia/nemotron-3.5-lightning)
+
+Guide for calling every confirmed OpenRouter API that serves `nvidia/nemotron-3.5-lightning`.
+
+Model page: https://openrouter.ai/nvidia/nemotron-3.5-lightning
+Create an API key: https://openrouter.ai/settings/keys
+
+## Pricing
+
+Standard-variant prices for `nvidia/nemotron-3.5-lightning`, per provider, in the unit each provider bills (tokens, images, seconds of video, or characters of audio). Pay-as-you-go with no markup on the provider's price.
+
+- Darkbloom: $0.025/M tokens input, $0.12/M tokens output (plus 1 more; see the model page for the full price list)
+- io.net: $0.0469/M tokens input, $0.134/M tokens output (plus 1 more; see the model page for the full price list)
+- Fireworks: $0.05/M tokens input, $0.20/M tokens output (plus 1 more; see the model page for the full price list)
+- DeepInfra: $0.06/M tokens input, $0.16/M tokens output (plus 1 more; see the model page for the full price list)
+- CoreWeave: $0.07/M tokens input, $0.20/M tokens output (plus 1 more; see the model page for the full price list)
+
+Full price table, including other variants and per-request charges: https://openrouter.ai/nvidia/nemotron-3.5-lightning
+How OpenRouter prices requests: https://openrouter.ai/pricing
+
+## EU in-region routing
+
+`nvidia/nemotron-3.5-lightning` is not currently available through EU in-region routing.
+
+Docs: https://openrouter.ai/docs/guides/features/in-region-routing
+
+## Authentication
+
+Send this header with every request:
+
+- Authorization: Bearer $OPENROUTER_API_KEY
+
+## Text / Chat Completions API
+
+Generate text with `nvidia/nemotron-3.5-lightning` through OpenRouter's Chat Completions API.
+
+Docs: https://openrouter.ai/docs/api/api-reference/chat/create-a-chat-completion
+
+### Endpoint
+
+POST https://openrouter.ai/api/v1/chat/completions
+
+Headers:
+- Content-Type: application/json
+
+### Request fields (nvidia/nemotron-3.5-lightning)
+
+- model: string (required) — `"nvidia/nemotron-3.5-lightning"`
+- messages: array (required) — ordered conversation messages with `role` and `content`
+- stream: boolean (optional) — return Server-Sent Events as tokens are generated
+- max_tokens: optional — accepted by this model; see the API reference for its value shape
+- reasoning: optional — accepted by this model; see the API reference for its value shape
+- seed: optional — accepted by this model; see the API reference for its value shape
+- temperature: optional — accepted by this model; see the API reference for its value shape
+- tool_choice: optional — accepted by this model; see the API reference for its value shape
+- tools: optional — accepted by this model; see the API reference for its value shape
+- top_p: optional — accepted by this model; see the API reference for its value shape
+
+The model-specific optional fields above come from this model's advertised capabilities.
+`stream` and `provider` routing preferences are API controls accepted independently of that
+model capability list.
+
+### Response
+
+Without `stream`, the response is a Chat Completions JSON object:
+
+```json
+{
+  "id": "gen-abc123",
+  "choices": [{ "message": { "role": "assistant", "content": "..." } }],
+  "usage": { "prompt_tokens": 12, "completion_tokens": 24, "total_tokens": 36, "cost": 0.001 }
+}
+```
+
+With `stream: true`, the response is `text/event-stream`: read each `data:` JSON chunk until
+`data: [DONE]`. The final usage chunk carries token counts and cost when usage is requested.
+
+### Examples
+
+#### Chat completion
+
+```bash
+curl -X POST https://openrouter.ai/api/v1/chat/completions \
+  -H "Authorization: Bearer $OPENROUTER_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+  "model": "nvidia/nemotron-3.5-lightning",
+  "messages": [
+    {
+      "role": "user",
+      "content": "What is the meaning of life?"
+    }
+  ]
+}'
+```
+
+### Error differences
+
+- 400 — malformed messages or a parameter this model does not support
+- 502 — the upstream text generation failed
+
+## Errors
+
+Failures return `{"error": {"code": <number>, "message": <string>}}` with the HTTP status:
+
+- 400 — malformed request or an unsupported parameter
+- 401 — missing or invalid API key
+- 402 — insufficient credits
+- 403 — spend limit reached, key disabled, or access blocked
+- 404 — unknown model or no provider can serve the request
+- 429 — rate limited; retry with backoff
+- 502 — the operation failed upstream; failed generations are not billed
+
+---
+
+Canonical version of this document: https://openrouter.ai/nvidia/nemotron-3.5-lightning/llms.txt
+
+https://openrouter.ai/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free
+# OpenRouter APIs — NVIDIA: Nemotron 3 Nano Omni (free) (nvidia/nemotron-3-nano-omni-30b-a3b-reasoning)
+
+Guide for calling every confirmed OpenRouter API that serves `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning`.
+
+Model page: https://openrouter.ai/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning
+Create an API key: https://openrouter.ai/settings/keys
+
+## Pricing
+
+`nvidia/nemotron-3-nano-omni-30b-a3b-reasoning` has no public standard endpoint right now, so no current price is listed. Model page: https://openrouter.ai/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning
+
+## EU in-region routing
+
+`nvidia/nemotron-3-nano-omni-30b-a3b-reasoning` is not currently available through EU in-region routing.
+
+Docs: https://openrouter.ai/docs/guides/features/in-region-routing
+
+## Authentication
+
+Send this header with every request:
+
+- Authorization: Bearer $OPENROUTER_API_KEY
+
+## Text / Chat Completions API
+
+Generate text with `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning` through OpenRouter's Chat Completions API.
+
+Docs: https://openrouter.ai/docs/api/api-reference/chat/create-a-chat-completion
+
+### Endpoint
+
+POST https://openrouter.ai/api/v1/chat/completions
+
+Headers:
+- Content-Type: application/json
+
+### Request fields (nvidia/nemotron-3-nano-omni-30b-a3b-reasoning)
+
+- model: string (required) — `"nvidia/nemotron-3-nano-omni-30b-a3b-reasoning"`
+- messages: array (required) — ordered conversation messages with `role` and `content`
+- stream: boolean (optional) — return Server-Sent Events as tokens are generated
+- max_tokens: optional — accepted by this model; see the API reference for its value shape
+- reasoning: optional — accepted by this model; see the API reference for its value shape
+- seed: optional — accepted by this model; see the API reference for its value shape
+- temperature: optional — accepted by this model; see the API reference for its value shape
+- tool_choice: optional — accepted by this model; see the API reference for its value shape
+- tools: optional — accepted by this model; see the API reference for its value shape
+- top_p: optional — accepted by this model; see the API reference for its value shape
+
+The model-specific optional fields above come from this model's advertised capabilities.
+`stream` and `provider` routing preferences are API controls accepted independently of that
+model capability list.
+
+### Response
+
+Without `stream`, the response is a Chat Completions JSON object:
+
+```json
+{
+  "id": "gen-abc123",
+  "choices": [{ "message": { "role": "assistant", "content": "..." } }],
+  "usage": { "prompt_tokens": 12, "completion_tokens": 24, "total_tokens": 36, "cost": 0.001 }
+}
+```
+
+With `stream: true`, the response is `text/event-stream`: read each `data:` JSON chunk until
+`data: [DONE]`. The final usage chunk carries token counts and cost when usage is requested.
+
+### Examples
+
+#### Chat completion
+
+```bash
+curl -X POST https://openrouter.ai/api/v1/chat/completions \
+  -H "Authorization: Bearer $OPENROUTER_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+  "model": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+  "messages": [
+    {
+      "role": "user",
+      "content": "What is the meaning of life?"
+    }
+  ]
+}'
+```
+
+### Error differences
+
+- 400 — malformed messages or a parameter this model does not support
+- 502 — the upstream text generation failed
+
+## Errors
+
+Failures return `{"error": {"code": <number>, "message": <string>}}` with the HTTP status:
+
+- 400 — malformed request or an unsupported parameter
+- 401 — missing or invalid API key
+- 402 — insufficient credits
+- 403 — spend limit reached, key disabled, or access blocked
+- 404 — unknown model or no provider can serve the request
+- 429 — rate limited; retry with backoff
+- 502 — the operation failed upstream; failed generations are not billed
+
+---
+
+Canonical version of this document: https://openrouter.ai/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning/llms.txt
+
+
+https://openrouter.ai/nvidia/nemotron-3.5-content-safety:free
+# OpenRouter APIs — NVIDIA: Nemotron 3.5 Content Safety (free) (nvidia/nemotron-3.5-content-safety)
+
+Guide for calling every confirmed OpenRouter API that serves `nvidia/nemotron-3.5-content-safety`.
+
+Model page: https://openrouter.ai/nvidia/nemotron-3.5-content-safety
+Create an API key: https://openrouter.ai/settings/keys
+
+## Pricing
+
+Standard-variant prices for `nvidia/nemotron-3.5-content-safety`, per provider, in the unit each provider bills (tokens, images, seconds of video, or characters of audio). Pay-as-you-go with no markup on the provider's price.
+
+- DeepInfra: $0.20/M tokens input, $0.20/M tokens output
+
+Full price table, including other variants and per-request charges: https://openrouter.ai/nvidia/nemotron-3.5-content-safety
+How OpenRouter prices requests: https://openrouter.ai/pricing
+
+## EU in-region routing
+
+`nvidia/nemotron-3.5-content-safety` is not currently available through EU in-region routing.
+
+Docs: https://openrouter.ai/docs/guides/features/in-region-routing
+
+## Authentication
+
+Send this header with every request:
+
+- Authorization: Bearer $OPENROUTER_API_KEY
+
+## Text / Chat Completions API
+
+Generate text with `nvidia/nemotron-3.5-content-safety` through OpenRouter's Chat Completions API.
+
+Docs: https://openrouter.ai/docs/api/api-reference/chat/create-a-chat-completion
+
+### Endpoint
+
+POST https://openrouter.ai/api/v1/chat/completions
+
+Headers:
+- Content-Type: application/json
+
+### Request fields (nvidia/nemotron-3.5-content-safety)
+
+- model: string (required) — `"nvidia/nemotron-3.5-content-safety"`
+- messages: array (required) — ordered conversation messages with `role` and `content`
+- stream: boolean (optional) — return Server-Sent Events as tokens are generated
+- max_tokens: optional — accepted by this model; see the API reference for its value shape
+- reasoning: optional — accepted by this model; see the API reference for its value shape
+- seed: optional — accepted by this model; see the API reference for its value shape
+- temperature: optional — accepted by this model; see the API reference for its value shape
+- top_p: optional — accepted by this model; see the API reference for its value shape
+
+The model-specific optional fields above come from this model's advertised capabilities.
+`stream` and `provider` routing preferences are API controls accepted independently of that
+model capability list.
+
+### Response
+
+Without `stream`, the response is a Chat Completions JSON object:
+
+```json
+{
+  "id": "gen-abc123",
+  "choices": [{ "message": { "role": "assistant", "content": "..." } }],
+  "usage": { "prompt_tokens": 12, "completion_tokens": 24, "total_tokens": 36, "cost": 0.001 }
+}
+```
+
+With `stream: true`, the response is `text/event-stream`: read each `data:` JSON chunk until
+`data: [DONE]`. The final usage chunk carries token counts and cost when usage is requested.
+
+### Examples
+
+#### Chat completion
+
+```bash
+curl -X POST https://openrouter.ai/api/v1/chat/completions \
+  -H "Authorization: Bearer $OPENROUTER_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+  "model": "nvidia/nemotron-3.5-content-safety",
+  "messages": [
+    {
+      "role": "user",
+      "content": "What is the meaning of life?"
+    }
+  ]
+}'
+```
+
+### Error differences
+
+- 400 — malformed messages or a parameter this model does not support
+- 502 — the upstream text generation failed
+
+## Errors
+
+Failures return `{"error": {"code": <number>, "message": <string>}}` with the HTTP status:
+
+- 400 — malformed request or an unsupported parameter
+- 401 — missing or invalid API key
+- 402 — insufficient credits
+- 403 — spend limit reached, key disabled, or access blocked
+- 404 — unknown model or no provider can serve the request
+- 429 — rate limited; retry with backoff
+- 502 — the operation failed upstream; failed generations are not billed
+
+---
+
+Canonical version of this document: https://openrouter.ai/nvidia/nemotron-3.5-content-safety/llms.txt

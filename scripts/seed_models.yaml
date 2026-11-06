@@ -18,6 +18,8 @@ providers:
   - {code: gemini, kind: remote, display_name: Google Gemini, base_url: "https://generativelanguage.googleapis.com", api_key_env: GEMINI_API_KEY}
   # base_url lokal diisi dari RUNTIME_URL saat seed. Semua model lokal lewat OpenVINO (GPU/NPU).
   - {code: openvino, kind: local, display_name: "OpenVINO (Local Runtime)", base_url: "${RUNTIME_URL}", api_key_env: RUNTIME_TOKEN, timeout_seconds: 300, max_concurrency: 4}
+  # OpenRouter: hanya varian gratis (upstream_name berakhiran ":free"), lihat docs/openrouter/*.txt
+  - {code: openrouter, kind: remote, display_name: OpenRouter, base_url: "https://openrouter.ai/api/v1", api_key_env: OPENROUTER_API_KEY, config: {adapter: openai, headers: {X-Title: llm-gateway}}}
   # Provider API lain (tak terbatas jumlahnya): pilih adapter yang formatnya cocok lewat
   # config.adapter (openai | anthropic | gemini). Key = NAMA env berpola *_API_KEY, nilai di .env.
   # Lebih praktis lewat Admin API (POST /admin/providers, lihat docs/admin-api.http). Contoh:
@@ -155,6 +157,34 @@ models:
      supports_streaming: false, embedding_dimensions: 1536}
   - {alias: gemini/flash, provider: gemini, upstream_name: gemini-2.5-flash, model_type: chat, tier: light,
      supports_tools: true, supports_vision: true, supports_json_mode: true}
+
+  # ===================== OpenRouter (free) =====================
+  # Hanya varian ":free" (harga 0). Kapabilitas = parameter yang didukung per docs/openrouter/*.txt
+  # (tools → supports_tools, response_format → supports_json_mode). Tidak dimasukkan ke route
+  # mana pun: panggil langsung lewat alias, mis. model "openrouter/gemma-4-31b".
+  - {alias: openrouter/dots-3-note-preview, provider: openrouter, upstream_name: "dots-studio/dots-3-note-preview:free", model_type: chat, tier: light,
+     supports_tools: true, supports_json_mode: true}
+  - {alias: openrouter/gemma-4-26b-a4b, provider: openrouter, upstream_name: "google/gemma-4-26b-a4b-it:free", model_type: chat, tier: light,
+     supports_tools: true, supports_json_mode: true}
+  - {alias: openrouter/gemma-4-31b, provider: openrouter, upstream_name: "google/gemma-4-31b-it:free", model_type: chat, tier: light,
+     supports_tools: true, supports_json_mode: true}
+  - {alias: openrouter/lfm-2.5-2.6b, provider: openrouter, upstream_name: "liquid/lfm-2.5-2.6b:free", model_type: chat, tier: light,
+     supports_tools: true, supports_json_mode: true}
+  - {alias: openrouter/north-mini-code, provider: openrouter, upstream_name: "cohere/north-mini-code:free", model_type: chat, tier: light,
+     supports_tools: true}
+  - {alias: openrouter/nemotron-3-ultra, provider: openrouter, upstream_name: "nvidia/nemotron-3-ultra-550b-a55b:free", model_type: chat, tier: heavy,
+     supports_tools: true}
+  - {alias: openrouter/nemotron-3.5-super-vl, provider: openrouter, upstream_name: "nvidia/nemotron-3.5-super-vl:free", model_type: chat, tier: heavy,
+     supports_tools: true, supports_json_mode: true}
+  - {alias: openrouter/nemotron-3.5-lightning, provider: openrouter, upstream_name: "nvidia/nemotron-3.5-lightning:free", model_type: chat, tier: light,
+     supports_tools: true}
+  - {alias: openrouter/nemotron-3-nano-omni, provider: openrouter, upstream_name: "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free", model_type: chat, tier: light,
+     supports_tools: true}
+  - {alias: openrouter/nemotron-3.5-content-safety, provider: openrouter, upstream_name: "nvidia/nemotron-3.5-content-safety:free", model_type: chat, tier: light}
+  - {alias: openrouter/flint-v1.0, provider: openrouter, upstream_name: "recursive/flint-v1.0:free", model_type: chat, tier: light,
+     supports_tools: true, supports_json_mode: true}
+  - {alias: openrouter/xing4.0-29b-a4b, provider: openrouter, upstream_name: "xingchen-agi/xing4.0-29b-a4b:free", model_type: chat, tier: light,
+     supports_tools: true, supports_json_mode: true}
 
 routes:
   - alias: fast
