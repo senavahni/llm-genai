@@ -160,8 +160,8 @@ models:
 
   # ===================== OpenRouter (free) =====================
   # Hanya varian ":free" (harga 0). Kapabilitas = parameter yang didukung per docs/openrouter/*.txt
-  # (tools → supports_tools, response_format → supports_json_mode). Tidak dimasukkan ke route
-  # mana pun: panggil langsung lewat alias, mis. model "openrouter/gemma-4-31b".
+  # (tools → supports_tools, response_format → supports_json_mode). Panggil langsung lewat alias,
+  # mis. model "openrouter/gemma-4-31b", atau route "openrouter/auto" (fallback antar model free).
   - {alias: openrouter/dots-3-note-preview, provider: openrouter, upstream_name: "dots-studio/dots-3-note-preview:free", model_type: chat, tier: light,
      supports_tools: true, supports_json_mode: true}
   - {alias: openrouter/gemma-4-26b-a4b, provider: openrouter, upstream_name: "google/gemma-4-26b-a4b-it:free", model_type: chat, tier: light,
@@ -211,3 +211,17 @@ routes:
   - alias: embed-default
     description: embeddings (tidak ada embedding lokal)
     targets: [{model: openai/text-embedding-3-small, priority: 1}]
+  - alias: openrouter/auto
+    description: semua model free OpenRouter, pindah otomatis kalau kena limit
+    targets:
+      - {model: openrouter/nemotron-3-ultra, priority: 1}
+      - {model: openrouter/nemotron-3.5-super-vl, priority: 2}
+      - {model: openrouter/gemma-4-31b, priority: 3}
+      - {model: openrouter/xing4.0-29b-a4b, priority: 4}
+      - {model: openrouter/gemma-4-26b-a4b, priority: 5}
+      - {model: openrouter/nemotron-3-nano-omni, priority: 6}
+      - {model: openrouter/nemotron-3.5-lightning, priority: 7}
+      - {model: openrouter/flint-v1.0, priority: 8}
+      - {model: openrouter/dots-3-note-preview, priority: 9}
+      - {model: openrouter/north-mini-code, priority: 10}
+      - {model: openrouter/lfm-2.5-2.6b, priority: 11}
