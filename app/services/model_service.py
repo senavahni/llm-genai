@@ -24,6 +24,7 @@ from app.schemas.admin import (
 )
 from app.services import audit_service
 from app.services.audit_service import Actor
+from app.services.pricing import model_pricing, route_pricing
 from app.services.project_service import check_if_match
 from app.utils.errors import Conflict, InvalidRequestError, NotFound, Unprocessable
 from app.utils.logger import get_logger
@@ -372,6 +373,25 @@ async def delete_model(
     await session.commit()
     await reload_everything(registry, runtime=local)
     return {"deleted": alias}
+
+
+# ------------------------------------------------------------------- catalog
+async def catalog(session: AsyncSession) -> dict[str, Any]:
+    """Satu snapshot untuk pemilih model di Admin Console: provider, SEMUA model (termasuk
+    nonaktif) + harga estimasi, dan route + rentang harga kandidat aktifnya."""
+    codes = await _provider_codes(session)
+    rows = (await session.execute(select(Model).order_by(Model.alias))).scalars().all()
+    by_alias = {m.alias: m for m in rows}
+    models = [{**model_out(m, codes[m.provider_id]), "pricing": model_pricing(m)} for m in rows]
+    routes = []
+    for route in await list_routes(session):
+        active = [
+            by_alias[t["model_alias"]]
+            for t in route["targets"]
+            if by_alias[t["model_alias"]].is_enabled
+        ]
+        routes.append({**route, "pricing": route_pricing(active)})
+    return {"providers": await list_providers(session), "models": models, "routes": routes}
 
 
 # -------------------------------------------------------------------- routes

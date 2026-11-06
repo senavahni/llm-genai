@@ -165,6 +165,20 @@ Semua perubahan tercatat di audit log dan katalog di-reload otomatis tanpa resta
 (`GATEWAY_KEY_PEPPER`, `RUNTIME_TOKEN`, `DATABASE_URL`) tidak mungkin dikirim ke API pihak ketiga,
 walau pemegang key admin membuat provider dengan `base_url` sembarang.
 
+## Mengatur model & route dari Admin Console
+
+- **Provider → Model (n)**: semua model provider dengan harga **estimasi**, kapabilitas, route
+  yang memakainya, dan tombol aktif/nonaktif (model nonaktif ditolak & dilewati semua route).
+- **Auto per provider** (di halaman yang sama): route `<provider>/auto`, mis. `openrouter/auto`,
+  berisi model provider itu dalam urutan pilihan Anda (paling atas dicoba dulu). Pola
+  `<provider>/*` di project/key otomatis mencakupnya.
+- **Route**: atur kandidat & urutan route global (`fast`, `smart`, `code`, …) agar auto tidak
+  langsung memakai model mahal.
+- Semua field model/pola di konsol berupa pemilih yang bisa dicari (klik = daftar, ketik =
+  saring). Label harga: **GRATIS** (varian `:free`), **lokal (gratis)**, **harga belum diisi**
+  (harga 0 yang bukan gratis), atau `$in / $out per 1 jt token (estimasi)`.
+- Data: `GET /admin/catalog` (konsol) dan `x_pricing` di `GET /v1/models` (klien, mis. MCP).
+
 ## Profil operasional
 
 Model mana yang aktif dan ke mana route menunjuk diatur **profil** (`scripts/profiles/*.yaml`),

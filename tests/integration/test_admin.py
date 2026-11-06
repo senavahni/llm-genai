@@ -236,6 +236,74 @@ async def test_model_route_changes_apply_without_restart(admin):  # AC3, AC5
         assert r.status_code == 404
 
 
+async def test_catalog_pricing_and_provider_auto_route(admin):
+    """Katalog admin + x_pricing /v1/models; route `<provider>/auto` tercakup pola provider/*."""
+    async with admin.client(admin.admin_key) as a:
+        r = await a.post(
+            "/admin/models",
+            json={
+                "alias": "openai/murah",
+                "provider": "openai",
+                "upstream_name": "gpt-murah",
+                "model_type": "chat",
+                "input_cost_per_mtok": "0.1",
+                "output_cost_per_mtok": "0.4",
+            },
+        )
+        assert r.status_code == 201, r.text
+        r = await a.post(
+            "/admin/routes",
+            json={
+                "alias": "openai/auto",
+                "description": "auto OpenAI (termurah dulu)",
+                "targets": [
+                    {"model_alias": "openai/murah", "priority": 1},
+                    {"model_alias": "openai/gpt-light", "priority": 2},
+                ],
+            },
+        )
+        assert r.status_code == 201, r.text
+
+        cat = (await a.get("/admin/catalog")).json()
+        assert {"providers", "models", "routes"} <= set(cat)
+        models = {m["alias"]: m for m in cat["models"]}
+        assert models["openai/murah"]["pricing"]["kind"] == "paid"
+        assert models["openai/murah"]["pricing"]["input_per_mtok"] == 0.1
+        routes = {r["alias"]: r for r in cat["routes"]}
+        assert [t["model_alias"] for t in routes["openai/auto"]["targets"]] == [
+            "openai/murah",
+            "openai/gpt-light",
+        ]
+        assert routes["openai/auto"]["pricing"]["estimate"] is True
+
+        await a.put(
+            f"/admin/projects/{await _project_id('agent-a')}/allowed-models",
+            json={"patterns": ["openai/*"]},
+        )
+    async with admin.client() as c:  # key project agent-a: pola openai/* mencakup openai/auto
+        listed = {m["id"]: m for m in (await c.get("/v1/models")).json()["data"]}
+        assert listed["openai/murah"]["x_pricing"]["output_per_mtok"] == 0.4
+        assert "openai/auto" in listed and listed["openai/auto"]["x_pricing"]["kinds"]
+        r = await c.post(
+            "/v1/chat/completions",
+            json={"model": "openai/auto", "messages": [{"role": "user", "content": "x"}]},
+        )
+        assert r.status_code == 200 and r.headers["x-gateway-model"] == "openai/murah"
+
+    async with admin.client(admin.admin_key) as a:
+        r = await a.patch("/admin/models/openai/murah", json={"is_enabled": False})
+        assert r.status_code == 200
+        cat = (await a.get("/admin/catalog")).json()
+        murah = next(m for m in cat["models"] if m["alias"] == "openai/murah")
+        assert murah["is_enabled"] is False  # model nonaktif tetap tampil di katalog admin
+    async with admin.client() as c:  # auto melewati model nonaktif
+        r = await c.post(
+            "/v1/chat/completions",
+            json={"model": "openai/auto", "messages": [{"role": "user", "content": "x"}]},
+        )
+        assert r.status_code == 200 and r.headers["x-gateway-model"] == "openai/gpt-light"
+
+
 async def _project_id(slug: str) -> str:
     from app.models import Project
 

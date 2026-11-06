@@ -2,7 +2,7 @@
 'use strict';
 
 (() => {
-  const { h, api, toast, confirm, showSecret, form, help, badge, table, btn, action, when, genUrlSafe } = Kit;
+  const { h, api, toast, confirm, showSecret, form, priceLabel, help, badge, table, btn, action, when, genUrlSafe } = Kit;
   const root = document.getElementById('root');
   const MCP_PROJECT = 'marketing-mcp';
   const SCOPES = ['chat', 'completions', 'embeddings', 'images', 'models:read', 'usage:read'];
@@ -196,7 +196,7 @@
         { name: 'slug', label: 'Slug', required: true, placeholder: 'mis. riset-tim-a', help: 'huruf kecil, angka, tanda minus; tidak bisa diubah.' },
         { name: 'name', label: 'Nama tampilan', required: true },
         { name: 'owner', label: 'Pemilik / PIC' },
-        { name: 'allowed', label: 'Model yang diizinkan', value: 'fast, smart, embed-default, openai/*', help: 'dipisah koma.' },
+        { name: 'allowed', label: 'Model yang diizinkan', type: 'picker', multiple: true, items: await patternItems(), value: ['fast', 'smart', 'embed-default', 'openai/*'], help: PATTERN_HELP },
       ],
       submitLabel: 'Buat project',
     });
@@ -205,7 +205,7 @@
       slug: v.slug,
       name: v.name,
       owner: v.owner || null,
-      allowed_models: v.allowed.split(',').map((s) => s.trim()).filter(Boolean),
+      allowed_models: v.allowed,
     });
     selectedProject = created.id;
     toast(`Project ${created.slug} dibuat`);
@@ -218,7 +218,7 @@
       fields: [
         { name: 'name', label: 'Nama key', required: true, placeholder: 'mis. backend-prod', help: 'Nama aplikasi pemakai, supaya mudah dilacak.' },
         { name: 'scopes', label: 'Scope', type: 'checks', value: ['chat', 'embeddings', 'models:read'], options: SCOPES.map((s) => ({ value: s, label: s })), help: SCOPE_HELP },
-        { name: 'models', label: 'Model khusus key ini', placeholder: 'mis. openrouter/*', help: KEY_MODELS_HELP },
+        { name: 'models', label: 'Model khusus key ini', type: 'picker', multiple: true, items: await patternItems(), value: [], placeholder: 'kosong = ikut project; ketik mis. openrouter', help: KEY_MODELS_HELP },
         { name: 'rpm', label: 'Batas request/menit', type: 'number', min: 1, help: 'kosong = default Gateway.' },
         { name: 'expires', label: 'Kedaluwarsa', type: 'date', help: 'kosong = tidak kedaluwarsa.' },
       ],
@@ -229,7 +229,7 @@
     const created = await api('POST', `/admin/projects/${project.id}/keys`, {
       name: v.name,
       scopes: v.scopes,
-      allowed_models: splitPatterns(v.models),
+      allowed_models: v.models,
       rpm_limit: v.rpm,
       expires_at: v.expires ? new Date(`${v.expires}T23:59:59`).toISOString() : null,
     });
@@ -237,8 +237,50 @@
     refresh();
   }
 
-  const KEY_MODELS_HELP = 'Kosong = ikut "Model yang diizinkan" project. Diisi = HANYA pola ini yang berlaku untuk key ini (pola project diabaikan). Dipisah koma; route dan kandidatnya harus tercakup.';
-  const splitPatterns = (s) => (s || '').split(',').map((x) => x.trim()).filter(Boolean);
+  const KEY_MODELS_HELP = 'Kosong = ikut "Model yang diizinkan" project. Diisi = HANYA pola ini yang berlaku untuk key ini (pola project diabaikan). Route dan kandidatnya harus tercakup.';
+  const PATTERN_HELP = 'Klik untuk melihat pilihan, ketik untuk mencari. Route (mis. smart) DAN kandidatnya (mis. openai/*) harus diizinkan. Harga = estimasi.';
+
+  // ------------------------------------------------- katalog untuk pemilih model
+  const capsText = (m) => [m.supports_tools && 'tools', m.supports_json_mode && 'JSON', m.supports_vision && 'vision', m.supports_fim && 'FIM', m.model_type !== 'chat' && m.model_type].filter(Boolean).join(', ');
+  const isProviderAuto = (alias) => alias.endsWith('/auto');
+
+  async function loadCatalog() {
+    return api('GET', '/admin/catalog');
+  }
+
+  // Pilihan pemilih: route global, auto per provider, (pola) semua model 1 provider, model spesifik.
+  function catalogItems(cat, { patterns }) {
+    const names = Object.fromEntries(cat.providers.map((p) => [p.code, p.display_name]));
+    const items = [];
+    const routeItem = (r, group) => ({
+      value: r.alias,
+      label: r.alias + (r.is_enabled ? '' : ' (nonaktif)'),
+      group,
+      sub: [r.description, priceLabel(r.pricing), `kandidat: ${r.targets.map((t) => t.model_alias).join(' → ')}`].filter(Boolean).join(' · '),
+    });
+    cat.routes.filter((r) => !isProviderAuto(r.alias)).forEach((r) => items.push(routeItem(r, 'Route global (auto, berpindah antar kandidat)')));
+    cat.routes.filter((r) => isProviderAuto(r.alias)).forEach((r) => items.push(routeItem(r, 'Auto per provider')));
+    if (patterns) {
+      cat.providers.forEach((p) => {
+        const own = cat.models.filter((m) => m.provider_code === p.code);
+        if (own.length) items.push({ value: `${p.code}/*`, label: `${p.code}/*`, group: 'Semua model satu provider (termasuk auto-nya)', sub: `${p.display_name} · ${own.length} model` });
+      });
+    }
+    cat.models.forEach((m) => {
+      items.push({
+        value: m.alias,
+        label: m.alias + (m.is_enabled ? '' : ' (nonaktif)'),
+        group: `Model · ${names[m.provider_code] || m.provider_code}`,
+        sub: [priceLabel(m.pricing), capsText(m), m.upstream_name].filter(Boolean).join(' · '),
+        search: m.upstream_name,
+      });
+    });
+    return items;
+  }
+
+  async function patternItems() {
+    return catalogItems(await loadCatalog(), { patterns: true });
+  }
 
   function keyModels(k) {
     const own = k.allowed_models || [];
@@ -250,10 +292,10 @@
     const v = await form({
       title: `Model khusus key · ${k.name}`,
       intro: 'Kosongkan untuk kembali ikut pola project. Berlaku ≤ 60 detik, tanpa ganti key.',
-      fields: [{ name: 'patterns', label: 'Pola model', value: (k.allowed_models || []).join(', '), placeholder: 'mis. openrouter/*', help: KEY_MODELS_HELP }],
+      fields: [{ name: 'patterns', label: 'Pola model', type: 'picker', multiple: true, items: await patternItems(), value: k.allowed_models || [], placeholder: 'kosong = ikut project; ketik mis. openrouter', help: KEY_MODELS_HELP }],
     });
     if (!v) return;
-    const r = await api('PUT', `/admin/keys/${k.id}/allowed-models`, { patterns: splitPatterns(v.patterns) });
+    const r = await api('PUT', `/admin/keys/${k.id}/allowed-models`, { patterns: v.patterns });
     toast(r.inherits_project ? `Key ${k.name} kembali ikut project` : `Model khusus key ${k.name} disimpan`);
     refresh();
   }
@@ -321,21 +363,26 @@
   async function editModels(p, refresh) {
     const v = await form({
       title: `Model diizinkan · ${p.slug}`,
-      fields: [{ name: 'patterns', label: 'Pola model', required: true, value: (p.allowed_models || []).join(', '), help: 'dipisah koma, mis. fast, smart, embed-default, openai/*' }],
+      fields: [{ name: 'patterns', label: 'Pola model', type: 'picker', multiple: true, required: true, items: await patternItems(), value: p.allowed_models || [], help: PATTERN_HELP }],
     });
     if (!v) return;
-    await api('PUT', `/admin/projects/${p.id}/allowed-models`, { patterns: v.patterns.split(',').map((s) => s.trim()).filter(Boolean) });
+    await api('PUT', `/admin/projects/${p.id}/allowed-models`, { patterns: v.patterns });
     toast('Daftar model disimpan');
     refresh();
   }
 
   // ======================================================= 03 Provider
-  async function providersPage() {
-    const env = await api('GET', '/admin/env-status');
+  let selectedProvider = null;
+
+  async function providersPage({ refresh }) {
+    const [env, cat] = await Promise.all([api('GET', '/admin/env-status'), loadCatalog()]);
+    const count = (code) => cat.models.filter((m) => m.provider_code === code).length;
+    if (!env.providers.some((p) => p.code === selectedProvider)) selectedProvider = null;
+    const selected = env.providers.find((p) => p.code === selectedProvider);
     return h(
       'div',
       { class: 'stack' },
-      pageHead('03 · Provider', 'Provider & API key-nya', 'API key provider (OpenAI, dll.) sengaja TIDAK bisa dilihat atau diubah dari konsol: nilainya hanya ada di file .env Gateway.'),
+      pageHead('03 · Provider', 'Provider, model & auto', 'Pilih "Model" untuk melihat harga estimasi, menyalakan/mematikan model, dan mengatur route auto provider itu. API key provider tetap hanya di file .env Gateway.'),
       h(
         'section',
         { class: 'card' },
@@ -346,21 +393,27 @@
             { label: 'Variabel .env', render: (p) => (p.api_key_env ? h('code', { text: p.api_key_env }) : '—') },
             { label: 'Status key', render: (p) => badge(p.key_state) },
             {
-              label: 'Tes',
+              label: 'Aksi',
               class: 'actions',
               render: (p) =>
-                p.is_enabled
-                  ? action('Tes koneksi', async () => {
-                      const r = await api('POST', `/admin/providers/${encodeURIComponent(p.code)}/test`);
-                      const ok = !!(r && r.ok);
-                      toast(ok ? `${p.display_name}: terhubung` : `${p.display_name}: ${(r && r.detail) || 'gagal'}`, ok ? 'ok' : 'err');
-                    }, 'ghost', { class: 'btn btn-ghost btn-sm' })
-                  : '—',
+                h(
+                  'span',
+                  {},
+                  h('button', { type: 'button', class: 'btn btn-sm ' + (p.code === selectedProvider ? 'btn-primary' : 'btn-ghost'), onclick: () => { selectedProvider = p.code === selectedProvider ? null : p.code; refresh(); } }, `Model (${count(p.code)})`),
+                  p.is_enabled
+                    ? action('Tes koneksi', async () => {
+                        const r = await api('POST', `/admin/providers/${encodeURIComponent(p.code)}/test`);
+                        const ok = !!(r && r.ok);
+                        toast(ok ? `${p.display_name}: terhubung` : `${p.display_name}: ${(r && r.detail) || 'gagal'}`, ok ? 'ok' : 'err');
+                      }, 'ghost', { class: 'btn btn-ghost btn-sm' })
+                    : null,
+                ),
             },
           ],
           env.providers,
         ),
       ),
+      selected ? providerDetail(selected, cat, refresh) : null,
       help(
         'Cara mengisi / mengganti API key provider',
         [
@@ -375,6 +428,143 @@
         { open: true },
       ),
     );
+  }
+
+  // (A) model provider + (B) route auto provider `<code>/auto`
+  function providerDetail(p, cat, refresh) {
+    const models = cat.models.filter((m) => m.provider_code === p.code);
+    const autoAlias = `${p.code}/auto`;
+    const auto = cat.routes.find((r) => r.alias === autoAlias);
+    const usedBy = (alias) => cat.routes.filter((r) => r.targets.some((t) => t.model_alias === alias)).map((r) => r.alias);
+    const modelTable = table(
+      [
+        { label: 'Model', render: (m) => h('div', {}, h('code', { text: m.alias }), h('span', { class: 'sub', text: `upstream: ${m.upstream_name}` })) },
+        { label: 'Harga (estimasi)', render: (m) => h('span', { class: m.pricing.kind === 'free' ? 'tag' : '', text: priceLabel(m.pricing) }) },
+        { label: 'Kapabilitas', render: (m) => capsText(m) || '—' },
+        { label: 'Konteks', class: 'num', render: (m) => (m.context_window ? m.context_window.toLocaleString('id-ID') : '—') },
+        { label: 'Dipakai route', render: (m) => h('div', {}, usedBy(m.alias).map((a) => h('span', { class: 'tag', text: a }))) },
+        { label: 'Status', render: (m) => badge(m.is_enabled ? 'active' : 'archived', m.is_enabled ? 'Aktif' : 'Nonaktif') },
+        { label: 'Aksi', class: 'actions', render: (m) => action(m.is_enabled ? 'Nonaktifkan' : 'Aktifkan', () => toggleModel(m, usedBy(m.alias), refresh), m.is_enabled ? 'danger' : 'ghost', { class: `btn btn-${m.is_enabled ? 'danger' : 'ghost'} btn-sm` }) },
+      ],
+      models,
+      { empty: 'Provider ini belum punya model. Tambahkan lewat Admin API (POST /admin/models) atau seed.' },
+    );
+    const autoBody = auto
+      ? h('div', {},
+          h('ol', { class: 'auto-order' }, auto.targets.map((t) => {
+            const m = cat.models.find((x) => x.alias === t.model_alias);
+            return h('li', {}, h('code', { text: t.model_alias }), ' ', h('span', { class: 'sub', text: m ? `${priceLabel(m.pricing)}${m.is_enabled ? '' : ' · NONAKTIF (dilewati)'}` : '' }));
+          })),
+          h('p', { class: 'muted', text: `Estimasi: ${priceLabel(auto.pricing)}. Status: ${auto.is_enabled ? 'aktif' : 'nonaktif'}.` }))
+      : h('p', { class: 'muted', text: `Belum ada. Atur untuk membuat route ${autoAlias}: pilih model dan urutannya (paling atas dicoba dulu).` });
+    return h(
+      'div',
+      { class: 'stack' },
+      h('section', { class: 'card' }, h('div', { class: 'card-head' }, h('h2', { text: `Model ${p.display_name}` }), h('span', { class: 'sub', text: 'Model nonaktif tidak bisa dipakai siapa pun dan dilewati semua route.' })), modelTable),
+      h(
+        'section',
+        { class: 'card' },
+        h('div', { class: 'card-head' }, h('h2', {}, 'Auto ', h('code', { text: autoAlias })),
+          h('span', { class: 'actions' },
+            models.length ? action(auto ? 'Atur' : 'Buat', () => editProviderAuto(p, models, auto, refresh), 'primary', { class: 'btn btn-primary btn-sm' }) : null,
+            auto ? action(auto.is_enabled ? 'Matikan' : 'Nyalakan', () => toggleRoute(auto, refresh), 'ghost', { class: 'btn btn-ghost btn-sm' }) : null)),
+        autoBody,
+        h('p', { class: 'muted', text: `Pakai "${autoAlias}" sebagai model di aplikasi/agent: Gateway mencoba model teratas, lalu turun ke berikutnya bila gagal/limit. Pola ${p.code}/* di project/key otomatis mengizinkannya.` }),
+      ),
+    );
+  }
+
+  async function toggleModel(m, routes, refresh) {
+    if (m.is_enabled) {
+      const where = routes.length ? ` Model ini kandidat di route: ${routes.join(', ')} — route akan melewatinya.` : '';
+      const ok = await confirm({ title: `Nonaktifkan ${m.alias}?`, message: `Request langsung ke model ini ditolak dan semua route melewatinya.${where} Bisa diaktifkan lagi kapan saja.`, confirmLabel: 'Nonaktifkan', danger: true });
+      if (!ok) return;
+    }
+    await api('PATCH', `/admin/models/${m.alias}`, { is_enabled: !m.is_enabled });
+    toast(m.is_enabled ? `${m.alias} dinonaktifkan` : `${m.alias} diaktifkan`);
+    refresh();
+  }
+
+  // targets dari urutan pilihan (pertama = prioritas 1)
+  const orderedTargets = (aliases) => aliases.map((a, i) => ({ model_alias: a, priority: i + 1 }));
+  const ORDER_HELP = 'Urutan pilihan = urutan dicoba (atas dulu). Untuk mengubah urutan: hapus chip lalu pilih lagi. Harga = estimasi.';
+
+  async function editProviderAuto(p, models, auto, refresh) {
+    const items = models.map((m) => ({ value: m.alias, label: m.alias + (m.is_enabled ? '' : ' (nonaktif)'), group: 'Model ' + p.display_name, sub: [priceLabel(m.pricing), capsText(m)].filter(Boolean).join(' · '), search: m.upstream_name }));
+    const v = await form({
+      title: `Auto · ${p.code}/auto`,
+      intro: 'Pilih model provider ini untuk route auto. Saran: model termurah/gratis di urutan atas, model mahal di bawah (atau tidak dipilih sama sekali).',
+      fields: [
+        { name: 'targets', label: 'Model & urutan', type: 'picker', multiple: true, required: true, items, value: auto ? auto.targets.map((t) => t.model_alias) : [], help: ORDER_HELP },
+        { name: 'description', label: 'Deskripsi', value: auto ? auto.description || '' : `auto ${p.display_name}` },
+      ],
+    });
+    if (!v) return;
+    const body = { description: v.description || null, targets: orderedTargets(v.targets) };
+    if (auto) await api('PATCH', `/admin/routes/${auto.alias}`, body);
+    else await api('POST', '/admin/routes', { alias: `${p.code}/auto`, ...body });
+    toast(`Route ${p.code}/auto disimpan`);
+    refresh();
+  }
+
+  async function toggleRoute(r, refresh) {
+    if (r.is_enabled && !(await confirm({ title: `Matikan route ${r.alias}?`, message: 'Request ke route ini akan ditolak (404) sampai dinyalakan lagi. Aplikasi/agent yang memakainya ikut gagal.', confirmLabel: 'Matikan', danger: true }))) return;
+    await api('PATCH', `/admin/routes/${r.alias}`, { is_enabled: !r.is_enabled });
+    toast(r.is_enabled ? `Route ${r.alias} dimatikan` : `Route ${r.alias} dinyalakan`);
+    refresh();
+  }
+
+  // ========================================================= Route
+  async function routesPage({ refresh }) {
+    const cat = await loadCatalog();
+    const byAlias = Object.fromEntries(cat.models.map((m) => [m.alias, m]));
+    const global = cat.routes.filter((r) => !isProviderAuto(r.alias));
+    return h(
+      'div',
+      { class: 'stack' },
+      pageHead('Route', 'Route auto (fast, smart, …)', 'Route = daftar kandidat model yang dicoba berurutan. Atur di sini agar auto tidak langsung memakai model mahal. Berlaku tanpa restart, tercatat di audit log.'),
+      h(
+        'section',
+        { class: 'card' },
+        table(
+          [
+            { label: 'Route', render: (r) => h('div', {}, h('code', { text: r.alias }), h('span', { class: 'sub', text: r.description || '' })) },
+            {
+              label: 'Kandidat (urutan dicoba)',
+              render: (r) => h('ol', { class: 'auto-order' }, r.targets.map((t) => {
+                const m = byAlias[t.model_alias];
+                return h('li', {}, h('code', { text: t.model_alias }), ' ', h('span', { class: 'sub', text: m ? `${priceLabel(m.pricing)}${m.is_enabled ? '' : ' · NONAKTIF (dilewati)'}` : '' }));
+              })),
+            },
+            { label: 'Estimasi', render: (r) => priceLabel(r.pricing) },
+            { label: 'Status', render: (r) => badge(r.is_enabled ? 'active' : 'archived', r.is_enabled ? 'Aktif' : 'Nonaktif') },
+            { label: 'Aksi', class: 'actions', render: (r) => h('span', {}, action('Ubah kandidat', () => editRoute(r, cat, refresh), 'ghost', { class: 'btn btn-ghost btn-sm' }), action(r.is_enabled ? 'Matikan' : 'Nyalakan', () => toggleRoute(r, refresh), r.is_enabled ? 'danger' : 'ghost', { class: `btn btn-${r.is_enabled ? 'danger' : 'ghost'} btn-sm` })) },
+          ],
+          global,
+          { empty: 'Belum ada route.' },
+        ),
+      ),
+      help('Tips memilih kandidat', [
+        'Kandidat yang tidak punya kapabilitas yang diminta (tools, JSON, vision) otomatis dilewati — sisakan minimal satu yang mampu.',
+        'Pindah ke kandidat berikutnya hanya terjadi bila kandidat sebelumnya gagal/limit sebelum token pertama, jadi kandidat pertama menentukan biaya sehari-hari.',
+        'Route auto per provider (mis. openrouter/auto) diatur di halaman Provider → Model.',
+      ]),
+    );
+  }
+
+  async function editRoute(r, cat, refresh) {
+    const items = catalogItems({ ...cat, routes: [] }, { patterns: false });
+    const v = await form({
+      title: `Kandidat route · ${r.alias}`,
+      fields: [
+        { name: 'targets', label: 'Model & urutan', type: 'picker', multiple: true, required: true, items, value: r.targets.map((t) => t.model_alias), help: ORDER_HELP },
+        { name: 'description', label: 'Deskripsi', value: r.description || '' },
+      ],
+    });
+    if (!v) return;
+    await api('PATCH', `/admin/routes/${r.alias}`, { description: v.description || null, targets: orderedTargets(v.targets) });
+    toast(`Route ${r.alias} disimpan`);
+    refresh();
   }
 
   // ========================================================= 04 .env
@@ -623,7 +813,8 @@
       pages: [
         { id: 'start', label: 'Mulai di sini', hint: 'alur key & checklist', render: startPage },
         { id: 'projects', label: 'Project & Key', hint: 'buat, rotasi, cabut, kuota', render: projectsPage },
-        { id: 'providers', label: 'Provider', hint: 'OpenAI dll. & tes koneksi', render: providersPage },
+        { id: 'providers', label: 'Provider', hint: 'model, harga, auto per provider', render: providersPage },
+        { id: 'routes', label: 'Route', hint: 'kandidat fast, smart, …', render: routesPage },
         { id: 'env', label: 'File .env', hint: 'status variabel & secret baru', render: envPage },
         { id: 'usage', label: 'Usage', hint: 'token & biaya per project/provider', render: usagePage },
       ],

@@ -51,6 +51,11 @@ async def test_provider(code: str, request: Request) -> dict[str, Any]:
     return await svc.test_provider(code, registry(request))
 
 
+async def get_catalog() -> dict[str, Any]:
+    async with SessionLocal() as s:
+        return await svc.catalog(s)
+
+
 async def list_models() -> dict[str, Any]:
     async with SessionLocal() as s:
         return {"data": await svc.list_models(s), "next_cursor": None}

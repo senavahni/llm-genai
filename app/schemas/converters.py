@@ -22,6 +22,7 @@ from app.schemas.unified import (
     UnifiedMessage,
     Usage,
 )
+from app.services.pricing import model_pricing, route_pricing
 from app.services.router_service import Capabilities
 from app.utils.errors import InvalidRequestError, UnsupportedParameter
 
@@ -275,6 +276,7 @@ def model_object(model: ModelConfig) -> dict[str, Any]:
         "x_tier": model.tier,
         "x_device": model.device,
         "x_type": model.model_type,
+        "x_pricing": model_pricing(model),
     }
 
 
@@ -289,5 +291,6 @@ def route_object(route: RouteConfig, targets: list[ModelConfig]) -> dict[str, An
         "x_tier": targets[0].tier if targets else None,
         "x_device": devices[0] if len(devices) == 1 else devices,
         "x_targets": [m.alias for m in targets],
+        "x_pricing": route_pricing(targets),
         "description": route.description,
     }

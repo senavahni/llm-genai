@@ -10,6 +10,12 @@ from app.utils.auth import require_admin
 router = APIRouter()
 
 
+@router.get("/catalog")
+async def get_catalog() -> dict[str, Any]:
+    """Provider + semua model + route, dengan harga estimasi (pemilih model di konsol)."""
+    return await c.get_catalog()
+
+
 @router.get("/models")
 async def list_models() -> dict[str, Any]:
     return await c.list_models()
