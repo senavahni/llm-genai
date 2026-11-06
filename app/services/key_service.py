@@ -89,7 +89,10 @@ class KeyService:
                 return None
             key, project = row
             patterns: tuple[str, ...] = ()
-            if project is not None:
+            if key.allowed_models:
+                # pola khusus key menggantikan pola project (bukan irisan)
+                patterns = tuple(sorted(key.allowed_models))
+            elif project is not None:
                 patterns = tuple(
                     (
                         await session.execute(
@@ -212,9 +215,11 @@ class KeyService:
         tpm_limit: int | None = None,
         expires_at: datetime | None = None,
         created_by: uuid.UUID | None = None,
+        allowed_models: Iterable[str] = (),
         commit: bool = True,
     ) -> tuple[str, ApiKey]:
         """Buat key baru. `full_key` dikembalikan sekali ini saja dan tidak disimpan.
+        `allowed_models` kosong = ikut pola project.
         commit=False: hanya flush (pemanggil meng-commit bersama audit log)."""
         scope_list = self._validate(role, scopes, project_id)
         full_key, prefix, key_hash = crypto.generate_api_key()
@@ -229,6 +234,7 @@ class KeyService:
             tpm_limit=tpm_limit,
             expires_at=expires_at,
             created_by=created_by,
+            allowed_models=list(dict.fromkeys(allowed_models)),
         )
         session.add(key)
         if commit:
@@ -289,6 +295,7 @@ class KeyService:
             tpm_limit=old.tpm_limit,
             expires_at=old.expires_at,
             created_by=created_by or old.created_by,
+            allowed_models=old.allowed_models or (),
             commit=False,
         )
         await self.revoke_key(session, old.id, reason=f"rotated -> {new.key_prefix}", commit=commit)

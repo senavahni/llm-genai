@@ -19,6 +19,7 @@ ACTIONS = frozenset(
         "key.create",
         "key.revoke",
         "key.rotate",
+        "key.allowed_models.set",
         "provider.create",
         "provider.update",
         "provider.delete",

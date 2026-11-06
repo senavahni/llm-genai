@@ -38,6 +38,10 @@ class ApiKey(CreatedAtMixin, Base):
     key_prefix: Mapped[str] = mapped_column(String(16), unique=True)
     key_hash: Mapped[str] = mapped_column(CHAR(64))
     scopes: Mapped[list[str]] = mapped_column(ARRAY(Text), server_default=text(DEFAULT_SCOPES_SQL))
+    # pola model khusus key: kosong = ikut pola project, terisi = menggantikan pola project
+    allowed_models: Mapped[list[str]] = mapped_column(
+        ARRAY(Text), server_default=text("'{}'::text[]")
+    )
     rpm_limit: Mapped[int | None] = mapped_column(Integer)
     tpm_limit: Mapped[int | None] = mapped_column(Integer)
     status: Mapped[str] = mapped_column(String(16), server_default=text("'active'"))

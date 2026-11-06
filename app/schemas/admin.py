@@ -66,16 +66,20 @@ class ProjectOut(_Out):
     updated_at: datetime
 
 
+def clean_patterns(v: list[str]) -> list[str]:
+    cleaned = [p.strip() for p in v]
+    if any(not p or len(p) > 128 for p in cleaned):
+        raise ValueError("pola tidak boleh kosong dan maks 128 karakter")
+    return list(dict.fromkeys(cleaned))
+
+
 class AllowedModelsSet(_In):
     patterns: list[str] = Field(min_length=1)
 
     @field_validator("patterns")
     @classmethod
     def _non_empty(cls, v: list[str]) -> list[str]:
-        cleaned = [p.strip() for p in v]
-        if any(not p or len(p) > 128 for p in cleaned):
-            raise ValueError("pola tidak boleh kosong dan maks 128 karakter")
-        return list(dict.fromkeys(cleaned))
+        return clean_patterns(v)
 
 
 # --------------------------------------------------------------------- key
@@ -85,6 +89,24 @@ class KeyCreate(_In):
     rpm_limit: int | None = Field(default=None, ge=1)
     tpm_limit: int | None = Field(default=None, ge=1)
     expires_at: datetime | None = None
+    # pola model khusus key; kosong = ikut pola project
+    allowed_models: list[str] = Field(default_factory=list, max_length=100)
+
+    @field_validator("allowed_models")
+    @classmethod
+    def _patterns(cls, v: list[str]) -> list[str]:
+        return clean_patterns(v)
+
+
+class KeyAllowedModelsSet(_In):
+    """Pola model khusus key. List kosong = hapus pengaturan khusus (kembali ikut project)."""
+
+    patterns: list[str] = Field(max_length=100)
+
+    @field_validator("patterns")
+    @classmethod
+    def _patterns(cls, v: list[str]) -> list[str]:
+        return clean_patterns(v)
 
 
 class KeyRevoke(_In):
@@ -98,6 +120,7 @@ class ApiKeyOut(_Out):
     role: str
     key_prefix: str
     scopes: list[str]
+    allowed_models: list[str]
     rpm_limit: int | None
     tpm_limit: int | None
     status: str

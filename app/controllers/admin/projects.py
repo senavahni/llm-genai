@@ -7,6 +7,7 @@ from app.controllers.admin import actor
 from app.core.database import SessionLocal
 from app.schemas.admin import (
     AllowedModelsSet,
+    KeyAllowedModelsSet,
     KeyCreate,
     ProjectCreate,
     ProjectUpdate,
@@ -78,6 +79,13 @@ async def revoke_key(
 async def rotate_key(key_id: uuid.UUID, request: Request, auth: AuthContext) -> dict[str, Any]:
     async with SessionLocal() as s:
         return await svc.rotate_key(s, actor(request, auth), key_id)
+
+
+async def set_key_allowed_models(
+    key_id: uuid.UUID, body: KeyAllowedModelsSet, request: Request, auth: AuthContext
+) -> dict[str, Any]:
+    async with SessionLocal() as s:
+        return await svc.set_key_allowed_models(s, actor(request, auth), key_id, body)
 
 
 async def list_quotas(project_id: uuid.UUID) -> dict[str, Any]:

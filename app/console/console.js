@@ -129,6 +129,7 @@
         { label: 'Nama', render: (k) => h('div', {}, h('strong', { text: k.name }), h('span', { class: 'sub', text: `dibuat ${when(k.created_at)}` })) },
         { label: 'Prefix', render: (k) => h('code', { text: k.key_prefix }) },
         { label: 'Scope', render: (k) => h('div', {}, k.scopes.map((s) => h('span', { class: 'tag', text: s }))) },
+        { label: 'Model diizinkan', render: (k) => keyModels(k) },
         { label: 'RPM', class: 'num', render: (k) => (k.rpm_limit ?? 'default') },
         { label: 'Status', render: (k) => h('div', {}, badge(k.status), k.revoked_reason ? h('span', { class: 'sub', text: k.revoked_reason }) : null) },
         { label: 'Terakhir dipakai', render: (k) => when(k.last_used_at) },
@@ -137,7 +138,7 @@
           class: 'actions',
           render: (k) =>
             k.status === 'active'
-              ? h('span', {}, action('Rotasi', () => rotateKey(k, refresh), 'ghost', { class: 'btn btn-ghost btn-sm' }), action('Cabut', () => revokeKey(k, refresh), 'danger', { class: 'btn btn-danger btn-sm' }))
+              ? h('span', {}, action('Model', () => editKeyModels(k, refresh), 'ghost', { class: 'btn btn-ghost btn-sm' }), action('Rotasi', () => rotateKey(k, refresh), 'ghost', { class: 'btn btn-ghost btn-sm' }), action('Cabut', () => revokeKey(k, refresh), 'danger', { class: 'btn btn-danger btn-sm' }))
               : '—',
         },
       ],
@@ -181,7 +182,7 @@
           { class: 'card' },
           h('div', { class: 'card-head' }, h('h2', { text: 'Model yang diizinkan' }), archived ? null : action('Ubah', () => editModels(project, refresh), 'ghost', { class: 'btn btn-ghost btn-sm' })),
           h('div', {}, (project.allowed_models || []).length ? project.allowed_models.map((m) => h('span', { class: 'tag', text: m })) : h('span', { class: 'muted', text: 'Belum ada — semua permintaan model ditolak.' })),
-          h('p', { class: 'muted', text: 'Route (mis. smart) DAN kandidatnya (mis. openai/*) harus diizinkan.' }),
+          h('p', { class: 'muted', text: 'Route (mis. smart) DAN kandidatnya (mis. openai/*) harus diizinkan. Berlaku untuk semua key project ini, kecuali key yang punya pengaturan model khusus (tombol "Model" di tabel key).' }),
         ),
       ),
     );
@@ -217,6 +218,7 @@
       fields: [
         { name: 'name', label: 'Nama key', required: true, placeholder: 'mis. backend-prod', help: 'Nama aplikasi pemakai, supaya mudah dilacak.' },
         { name: 'scopes', label: 'Scope', type: 'checks', value: ['chat', 'embeddings', 'models:read'], options: SCOPES.map((s) => ({ value: s, label: s })), help: SCOPE_HELP },
+        { name: 'models', label: 'Model khusus key ini', placeholder: 'mis. openrouter/*', help: KEY_MODELS_HELP },
         { name: 'rpm', label: 'Batas request/menit', type: 'number', min: 1, help: 'kosong = default Gateway.' },
         { name: 'expires', label: 'Kedaluwarsa', type: 'date', help: 'kosong = tidak kedaluwarsa.' },
       ],
@@ -227,10 +229,32 @@
     const created = await api('POST', `/admin/projects/${project.id}/keys`, {
       name: v.name,
       scopes: v.scopes,
+      allowed_models: splitPatterns(v.models),
       rpm_limit: v.rpm,
       expires_at: v.expires ? new Date(`${v.expires}T23:59:59`).toISOString() : null,
     });
     await showSecret({ title: `Key ${created.name}`, secret: created.key, note: 'Tempel ke aplikasi pemakai (mis. .env-nya). Untuk agent MCP: Konsol MCP → Key LLM per agent → Impor.' });
+    refresh();
+  }
+
+  const KEY_MODELS_HELP = 'Kosong = ikut "Model yang diizinkan" project. Diisi = HANYA pola ini yang berlaku untuk key ini (pola project diabaikan). Dipisah koma; route dan kandidatnya harus tercakup.';
+  const splitPatterns = (s) => (s || '').split(',').map((x) => x.trim()).filter(Boolean);
+
+  function keyModels(k) {
+    const own = k.allowed_models || [];
+    if (!own.length) return h('span', { class: 'muted', text: 'ikut project' });
+    return h('div', {}, own.map((m) => h('span', { class: 'tag', text: m })), h('span', { class: 'sub', text: 'khusus key' }));
+  }
+
+  async function editKeyModels(k, refresh) {
+    const v = await form({
+      title: `Model khusus key · ${k.name}`,
+      intro: 'Kosongkan untuk kembali ikut pola project. Berlaku ≤ 60 detik, tanpa ganti key.',
+      fields: [{ name: 'patterns', label: 'Pola model', value: (k.allowed_models || []).join(', '), placeholder: 'mis. openrouter/*', help: KEY_MODELS_HELP }],
+    });
+    if (!v) return;
+    const r = await api('PUT', `/admin/keys/${k.id}/allowed-models`, { patterns: splitPatterns(v.patterns) });
+    toast(r.inherits_project ? `Key ${k.name} kembali ikut project` : `Model khusus key ${k.name} disimpan`);
     refresh();
   }
 

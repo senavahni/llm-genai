@@ -81,6 +81,54 @@ async def test_project_key_lifecycle_flow(admin):
         assert row.actor_key_id is not None and row.ip is not None
 
 
+async def test_key_allowed_models_override_project(admin):
+    """Key dengan pola khusus memakai pola itu (pola project diabaikan); kosong = ikut project."""
+    smart = ["smart", "anthropic/*", "openai/*"]
+    body = {"model": "smart", "messages": [{"role": "user", "content": "hai"}]}
+    async with admin.client(admin.admin_key) as a:
+        pid = (
+            await a.post(
+                "/admin/projects",
+                json={"slug": "p-keymodels", "name": "P", "allowed_models": ["local"]},
+            )
+        ).json()["id"]
+        plain = (await a.post(f"/admin/projects/{pid}/keys", json={"name": "plain"})).json()
+        r = await a.post(
+            f"/admin/projects/{pid}/keys", json={"name": "khusus", "allowed_models": smart}
+        )
+        assert r.status_code == 201, r.text
+        special = r.json()
+        assert special["allowed_models"] == smart and plain["allowed_models"] == []
+        assert (
+            await a.post(f"/admin/projects/{pid}/keys", json={"name": "x", "allowed_models": [" "]})
+        ).status_code == 400
+
+    async with admin.client(plain["key"]) as c:
+        assert (await c.post("/v1/chat/completions", json=body)).status_code == 403
+    async with admin.client(special["key"]) as c:
+        assert (await c.post("/v1/chat/completions", json=body)).status_code == 200
+
+    async with admin.client(admin.admin_key) as a:
+        rotated = (await a.post(f"/admin/keys/{special['id']}/rotate")).json()
+        assert rotated["allowed_models"] == smart  # rotasi membawa pola khusus
+        r = await a.put(f"/admin/keys/{rotated['id']}/allowed-models", json={"patterns": []})
+        assert r.json() == {"patterns": [], "inherits_project": True}
+        r = await a.put(f"/admin/keys/{special['id']}/allowed-models", json={"patterns": smart})
+        assert r.status_code == 409  # key lama sudah dicabut saat rotasi
+    async with admin.client(rotated["key"]) as c:
+        # kembali ikut project (hanya "local") → smart ditolak tanpa ganti key
+        assert (await c.post("/v1/chat/completions", json=body)).status_code == 403
+
+    async with admin.client(admin.admin_key) as a:
+        r = await a.put(f"/admin/keys/{plain['id']}/allowed-models", json={"patterns": smart})
+        assert r.json() == {"patterns": sorted(smart), "inherits_project": False}
+    async with admin.client(plain["key"]) as c:
+        assert (await c.post("/v1/chat/completions", json=body)).status_code == 200
+
+    actions = [x.action for x in await _audits()]
+    assert actions.count("key.allowed_models.set") == 2
+
+
 async def test_rotate_suspend_archive(admin):
     async with admin.client(admin.admin_key) as a:
         pid = (

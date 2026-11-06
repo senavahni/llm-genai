@@ -150,6 +150,11 @@ Langkah (contoh lengkap di `docs/admin-api.http`, bagian providers):
    atau buat route baru `POST /admin/routes`.
 5. **Izinkan di project**: `PUT /admin/projects/{id}/allowed-models` harus mencakup route
    **dan** model kandidatnya (mis. `["smart", "deepseek/*"]`).
+   - **Per key (opsional)**: `PUT /admin/keys/{id}/allowed-models` (atau `allowed_models` saat
+     membuat key; Konsol: tombol "Model" di tabel key). Key yang punya pola sendiri memakai
+     **hanya** pola itu, pola project diabaikan. List kosong = kembali ikut project. Contoh: key
+     agent gratis `{"patterns": ["openrouter/*"]}` tidak bisa memakai model berbayar walau
+     project-nya mengizinkan `smart`/`openai/*`. Rotasi key membawa pola khususnya.
 
 Mengubah provider: `PATCH /admin/providers/{code}` (`display_name`, `is_enabled`, `base_url`,
 `api_key_env`, `timeout_seconds`, `max_concurrency`, `config`). Menghapus:

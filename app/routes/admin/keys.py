@@ -4,7 +4,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, Request
 
 from app.controllers.admin import projects as c
-from app.schemas.admin import KeyCreate, KeyRevoke
+from app.schemas.admin import KeyAllowedModelsSet, KeyCreate, KeyRevoke
 from app.schemas.common import AuthContext
 from app.utils.auth import require_admin
 
@@ -38,3 +38,13 @@ async def rotate_key(
     key_id: uuid.UUID, request: Request, auth: AuthContext = Depends(require_admin)
 ) -> dict[str, Any]:
     return await c.rotate_key(key_id, request, auth)
+
+
+@router.put("/keys/{key_id}/allowed-models")
+async def set_key_allowed_models(
+    key_id: uuid.UUID,
+    body: KeyAllowedModelsSet,
+    request: Request,
+    auth: AuthContext = Depends(require_admin),
+) -> dict[str, Any]:
+    return await c.set_key_allowed_models(key_id, body, request, auth)

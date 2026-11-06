@@ -16,6 +16,7 @@ from app.schemas.admin import (
     AllowedModelsSet,
     ApiKeyCreatedOut,
     ApiKeyOut,
+    KeyAllowedModelsSet,
     KeyCreate,
     ProjectCreate,
     ProjectOut,
@@ -208,12 +209,29 @@ async def create_key(
         tpm_limit=body.tpm_limit,
         expires_at=body.expires_at,
         created_by=actor.auth.key_id if actor.auth else None,
+        allowed_models=body.allowed_models,
         commit=False,
     )
     after = snapshot(ApiKeyOut, key)
     audit_service.record(session, actor, "key.create", "api_key", key.id, None, after)
     await session.commit()
     return {**after, "key": full_key}
+
+
+async def set_key_allowed_models(
+    session: AsyncSession, actor: Actor, key_id: uuid.UUID, body: KeyAllowedModelsSet
+) -> dict[str, Any]:
+    """Pola model khusus key (menggantikan pola project); list kosong = kembali ikut project."""
+    key = await _key(session, key_id)
+    if key.status != "active":
+        raise Conflict("Hanya key aktif yang dapat diubah")
+    before = {"patterns": sorted(key.allowed_models or [])}
+    key.allowed_models = sorted(body.patterns)
+    after = {"patterns": key.allowed_models}
+    audit_service.record(session, actor, "key.allowed_models.set", "api_key", key_id, before, after)
+    await session.commit()
+    key_service.invalidate(key.key_prefix)
+    return {**after, "inherits_project": not key.allowed_models}
 
 
 async def _key(session: AsyncSession, key_id: uuid.UUID) -> ApiKey:
