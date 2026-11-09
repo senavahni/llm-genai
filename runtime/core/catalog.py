@@ -1,7 +1,7 @@
 """Katalog model lokal runtime. Single source of truth = tabel `models` (device <> 'remote')."""
 
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field, replace
 from typing import Any
 
@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import SessionLocal
 from app.models import Model
-from app.utils.errors import ModelNotFound
+from app.utils.errors import ModelNotFound, ModelNotWhitelisted
 from app.utils.logger import get_logger
 
 log = get_logger("runtime.catalog")
@@ -70,9 +70,19 @@ class LocalModelSpec:
 
 
 class RuntimeCatalog:
-    def __init__(self, session_factory: Callable[[], AsyncSession] = SessionLocal) -> None:
+    def __init__(
+        self,
+        session_factory: Callable[[], AsyncSession] = SessionLocal,
+        allowed: Iterable[str] = (),
+    ) -> None:
         self._session_factory = session_factory
+        # whitelist RUNTIME_ALLOWED_MODELS (alias atau upstream_name); kosong = semua boleh
+        self.allowed = frozenset(allowed)
         self.specs: dict[str, LocalModelSpec] = {}  # key = upstream_name (nama model di runtime)
+        self.rejected: dict[str, str] = {}  # upstream_name/alias → alias, di luar whitelist
+
+    def is_allowed(self, spec: LocalModelSpec) -> bool:
+        return not self.allowed or bool({spec.alias, spec.upstream_name} & self.allowed)
 
     async def load(self) -> dict[str, LocalModelSpec]:
         async with self._session_factory() as session:
@@ -85,18 +95,36 @@ class RuntimeCatalog:
                 .scalars()
                 .all()
             )
-        self.specs = {r.upstream_name: LocalModelSpec.from_row(r) for r in rows}
+        self.set({r.upstream_name: LocalModelSpec.from_row(r) for r in rows})
         log.info("catalog_loaded", models=sorted(self.specs))
         return self.specs
 
     def set(self, specs: dict[str, LocalModelSpec]) -> None:
-        self.specs = specs
+        """Model di luar whitelist dibuang dari katalog: tidak pernah di-load/compile/warmup."""
+        self.specs, self.rejected = {}, {}
+        for name, spec in specs.items():
+            if self.is_allowed(spec):
+                self.specs[name] = spec
+                continue
+            self.rejected[name] = self.rejected[spec.alias] = spec.alias
+            log.warning(
+                "model_not_whitelisted",
+                model=spec.alias,
+                allowed=sorted(self.allowed),
+                message="model enabled di DB tetapi di luar RUNTIME_ALLOWED_MODELS; diabaikan",
+            )
 
     def get(self, name: str) -> LocalModelSpec:
         spec = self.specs.get(name)
         if spec is None:
             # izinkan juga alias gateway (mis. "local/qwen2.5-7b")
             spec = next((s for s in self.specs.values() if s.alias == name), None)
+        if spec is None and name in self.rejected:
+            log.error("model_load_rejected", model=self.rejected[name], reason="not_whitelisted")
+            raise ModelNotWhitelisted(
+                f"Model lokal '{self.rejected[name]}' di luar whitelist runtime "
+                "(RUNTIME_ALLOWED_MODELS); load/compile ditolak"
+            )
         if spec is None:
             raise ModelNotFound(f"Model lokal '{name}' tidak ada di katalog runtime")
         return spec

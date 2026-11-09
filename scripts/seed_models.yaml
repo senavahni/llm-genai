@@ -136,6 +136,32 @@ models:
              allowed_sizes: ["512x512"], default_steps: 25, max_steps: 50, default_strength: 0.6,
              cache_dir: local_models/ov_cache}
 
+  # Embedding lokal v1.0.0 (LGW-V1-01/02): IR INT8 hasil spike (kesetaraan vs PyTorch: kosinus
+  # rata-rata 0,9986, min 0,9972; lihat docs/hardware.md). Last-token pooling + L2 normalize di
+  # TextEmbeddingPipeline; prefix instruksi query diterapkan Gateway. Selalu termuat (pinned).
+  - alias: local/qwen3-embedding-0.6b
+    provider: openvino
+    upstream_name: qwen3-embedding-0.6b
+    model_type: embedding
+    tier: light
+    device: gpu
+    runtime_backend: openvino_embed
+    hf_repo: Qwen/Qwen3-Embedding-0.6B
+    convert: true
+    artifact_path: local_models/openvino/qwen3-embedding-0.6b-int8
+    # puncak terukur batch 8 × ±1.670 token = 1.274 MB (typeperf); 8 × 2.048 token ≈ 1.500 MB
+    vram_mb: 1800
+    artifact_sha256: 015dc031652b5bb77bc94485e803374dbcacff7d9adf21ff090679e086a7085e
+    is_pinned: true
+    license: apache-2.0
+    supports_streaming: false
+    embedding_dimensions: 1024
+    context_window: 32768
+    # max_batch 8: batch lebih besar tidak menambah token/s di iGPU (±420–440) tetapi memori naik
+    # tajam (b32 × 1.670 token = 4.250 MB). Angka final dari benchmark LGW-V1-05.
+    config: {device: GPU, pooling: last_token, max_batch: 8, max_input_tokens: 2048,
+             cache_dir: local_models/ov_cache}
+
   # ===================== Remote (contoh) =====================
   # Harga USD per 1 juta token (halaman pricing resmi, Nov 2026); cached = harga cache hit/read.
   - {alias: anthropic/claude-sonnet, provider: anthropic, upstream_name: claude-sonnet-5-5, model_type: chat, tier: heavy,
@@ -211,8 +237,11 @@ routes:
     description: text-to-image & image-to-image
     targets: [{model: local/sd-1.5, priority: 1}]
   - alias: embed-default
-    description: embeddings (tidak ada embedding lokal)
+    description: embeddings remote (1536 dim)
     targets: [{model: openai/text-embedding-3-small, priority: 1}]
+  - alias: embed-local
+    description: embeddings lokal GPU (1024 dim), tanpa fallback ke dimensi lain
+    targets: [{model: local/qwen3-embedding-0.6b, priority: 1}]
   - alias: openrouter/auto
     description: semua model free OpenRouter, pindah otomatis kalau kena limit
     targets:

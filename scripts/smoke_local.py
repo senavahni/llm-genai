@@ -18,6 +18,7 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+from app.core.config import get_settings  # noqa: E402
 from runtime.backends.tool_parsers import parse_hermes  # noqa: E402
 from scripts._seedfile import load_seed, local_models  # noqa: E402
 from scripts.measure_models import pipeline_properties  # noqa: E402
@@ -183,8 +184,14 @@ def main() -> int:
     summary_path = OUT / "summary.json"
     summary = json.loads(summary_path.read_text()) if summary_path.exists() else {}
     summary = {k: v for k, v in summary.items() if k in TESTS or k == "local/sd-1.5"}
+    allowed = set(get_settings().runtime_allowed_models)
+    rejected = []
     for m in local_models(load_seed(), only):
         test = TESTS.get(m["alias"])
+        if allowed and not {m["alias"], m["upstream_name"]} & allowed:
+            print(f"{m['alias']}: DITOLAK, di luar RUNTIME_ALLOWED_MODELS (tidak di-load/compile)")
+            rejected.append(m["alias"])
+            continue
         if test is None:
             print(f"{m['alias']}: lewati (SD diuji lewat test_sd.py)")
             continue
@@ -223,6 +230,9 @@ def main() -> int:
         )
         print(f"  {'OK' if ok else 'GAGAL'} ({elapsed}s)")
         summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    if only and rejected:  # model diminta eksplisit tetapi ditolak whitelist → error
+        print(f"GAGAL: ditolak whitelist: {', '.join(rejected)}", file=sys.stderr)
+        return 1
     return 0 if all(v["ok"] for v in summary.values()) else 1
 
 

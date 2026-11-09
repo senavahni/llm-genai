@@ -241,6 +241,42 @@ class VLMPipeline(LLMPipeline):
         )
 
 
+# ----------------------------------------------------------- embedding palsu
+class _PoolingType:
+    CLS, MEAN, LAST_TOKEN = "CLS", "MEAN", "LAST_TOKEN"
+
+
+class _EmbedConfig:
+    def __init__(self) -> None:
+        self.pooling_type: str | None = None
+        self.normalize = False
+        self.padding_side: str | None = None
+        self.max_length: int | None = None
+
+
+class TextEmbeddingPipeline:
+    """Vektor deterministik ber-norma 1 (dimensi `dim`) dari teks; mencatat ukuran tiap batch."""
+
+    Config = _EmbedConfig
+    PoolingType = _PoolingType
+    dim = 8
+    instances: list["TextEmbeddingPipeline"] = []
+
+    def __init__(self, path: str, device: str, config: Any = None, **props: Any) -> None:
+        self.path, self.device, self.config, self.props = path, device, config, props
+        self.batches: list[int] = []
+        TextEmbeddingPipeline.instances.append(self)
+
+    @classmethod
+    def vector(cls, text: str) -> list[float]:
+        raw = np.array([(sum(map(ord, text)) * (i + 1)) % 97 + 1 for i in range(cls.dim)], float)
+        return (raw / np.linalg.norm(raw)).tolist()
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        self.batches.append(len(texts))
+        return [self.vector(t) for t in texts]
+
+
 def module() -> SimpleNamespace:
     return SimpleNamespace(
         Image2ImagePipeline=Image2ImagePipeline,
@@ -254,5 +290,6 @@ def module() -> SimpleNamespace:
         StreamerBase=StreamerBase,
         StreamingStatus=StreamingStatus,
         StructuredOutputConfig=StructuredOutputConfig,
+        TextEmbeddingPipeline=TextEmbeddingPipeline,
         _lock=threading.Lock(),
     )

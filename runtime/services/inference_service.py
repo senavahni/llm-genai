@@ -68,6 +68,9 @@ class InferenceService:
         )
         return result
 
+    async def embeddings(self, body: dict[str, Any], request_id: str | None) -> dict[str, Any]:
+        return await self._call("embed", body, request_id)
+
     async def images(
         self, body: dict[str, Any], request_id: str | None, cancel: asyncio.Event
     ) -> dict[str, Any]:

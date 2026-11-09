@@ -163,6 +163,20 @@ class ModelLoadFailed(UpstreamError):
     code = "model_load_failed"
 
 
+class ProviderUnavailable(UpstreamError):
+    """Provider tidak terjangkau (mis. Local Runtime mati / koneksi ditolak)."""
+
+    http_status = 503
+    code = "provider_unavailable"
+
+
+class ModelNotWhitelisted(ModelLoadFailed):
+    """Runtime menolak load model di luar RUNTIME_ALLOWED_MODELS."""
+
+    code = "model_not_whitelisted"
+    retryable = False
+
+
 class UnsupportedSize(InvalidRequestError):
     code = "unsupported_size"
     default_param = "size"

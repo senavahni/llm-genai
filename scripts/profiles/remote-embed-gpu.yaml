@@ -1,0 +1,44 @@
+# Profil aktif v1.0.0 (LGW-V1-03): semua chat lewat API remote, SATU model lokal saja —
+# Qwen3-Embedding-0.6B di GPU (OpenVINO) untuk route `embed-local` (1024 dim).
+#   scripts\conda-run.bat python scripts\manage.py seed            :: sekali, membuat model & route
+#   scripts\conda-run.bat python scripts\manage.py apply-profile remote-embed-gpu
+#   scripts\start-all.bat                                          :: runtime ikut dinyalakan
+# Model lokal lain DINONAKTIFKAN (artefak & cache tetap di disk) dan diblokir whitelist runtime:
+# `runtime_allowed_models` ditulis ke .env sebagai RUNTIME_ALLOWED_MODELS; runtime menolak
+# load/compile/warmup model lain, termasuk lewat Admin API cache/reload dan smoke_local.py.
+name: remote-embed-gpu
+
+runtime_allowed_models: [local/qwen3-embedding-0.6b]
+
+providers:
+  openvino: {is_enabled: true}
+
+models:
+  local/qwen3-embedding-0.6b: {is_enabled: true, is_pinned: true}
+  local/qwen2.5-7b: {is_enabled: false}
+  local/qwen2.5-coder-7b: {is_enabled: false}
+  local/qwen2.5-coder-1.5b: {is_enabled: false}
+  local/qwen2-vl-2b: {is_enabled: false}
+  local/sd-1.5: {is_enabled: false}
+
+routes:
+  # remote: sama dengan remote-only
+  - alias: fast
+    targets: [{model: gemini/flash, priority: 1}, {model: anthropic/claude-haiku, priority: 2},
+              {model: openai/gpt-light, priority: 3}]
+  - alias: smart
+    targets: [{model: anthropic/claude-sonnet, priority: 1}, {model: openai/gpt-heavy, priority: 2}]
+  - alias: code
+    targets: [{model: anthropic/claude-sonnet, priority: 1}, {model: openai/gpt-heavy, priority: 2}]
+  - alias: vision
+    targets: [{model: openai/gpt-light, priority: 1}, {model: anthropic/claude-haiku, priority: 2}]
+  - alias: local
+    is_enabled: false
+  - alias: autocomplete
+    is_enabled: false
+  - alias: image
+    is_enabled: false
+  # embedding lokal: kandidat tunggal, TANPA fallback ke model berdimensi lain
+  - alias: embed-local
+    is_enabled: true
+    targets: [{model: local/qwen3-embedding-0.6b, priority: 1}]

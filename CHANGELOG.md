@@ -6,6 +6,13 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id-ID/1.1.0/), ve
 ## [Unreleased]
 
 ### Ditambahkan
+- **Embedding lokal v1.0.0 (LGW-V1-01..03)**: `local/qwen3-embedding-0.6b` (Qwen3-Embedding-0.6B,
+  OpenVINO INT8, GPU, 1024 dim) lewat backend runtime `openvino_embed`
+  (`TextEmbeddingPipeline`), `/v1/embeddings` runtime → provider lokal → route `embed-local`
+  (tanpa fallback). Token usage dari tokenizer, biaya 0. `/health/ready` menandai route yang
+  seluruh kandidatnya lokal sebagai degraded bila runtime mati. Hasil spike: `docs/hardware.md`.
+- Profil `remote-embed-gpu` dan whitelist `RUNTIME_ALLOWED_MODELS` (runtime menolak
+  load/compile/warmup model di luar whitelist).
 - **Admin Console** `http://127.0.0.1:8000/console` (HTML/JS/CSS statis tanpa build, CSP
   `script-src 'self'`, `frame-ancestors 'none'`, `no-store`): hanya dari peer loopback + Host lokal.
   Masuk dengan admin key `lgw_` (hanya di memori tab, kunci otomatis 15 menit idle). Menu: Mulai

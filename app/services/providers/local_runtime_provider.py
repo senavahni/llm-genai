@@ -34,6 +34,8 @@ from app.utils.errors import (
     GatewayError,
     ModelBusy,
     ModelLoadFailed,
+    ModelNotWhitelisted,
+    ProviderUnavailable,
     RequestCancelled,
     UnsupportedParameter,
     UnsupportedSize,
@@ -48,6 +50,7 @@ RUNTIME_ERROR_CODES: dict[str, type[GatewayError]] = {
     "device_oom": DeviceOOM,
     "device_unavailable": DeviceUnavailable,
     "model_load_failed": ModelLoadFailed,
+    "model_not_whitelisted": ModelNotWhitelisted,
     "capability_not_supported": CapabilityNotSupported,
     "unsupported_size": UnsupportedSize,
     "unsupported_parameter": UnsupportedParameter,
@@ -151,6 +154,10 @@ class LocalRuntimeProvider(OpenAIProvider):
         return cls(message, param=err.get("param"))
 
     def map_error(self, exc: Exception) -> GatewayError:
+        if isinstance(exc, openai.APIConnectionError | httpx2.ConnectError) and not isinstance(
+            exc, openai.APITimeoutError
+        ):
+            return ProviderUnavailable(f"{self.cfg.code}: runtime lokal tidak terjangkau")
         if isinstance(exc, openai.APIStatusError):
             mapped = self.map_runtime_error(exc.status_code, exc.body)
             if mapped is None and isinstance(exc.body, dict):

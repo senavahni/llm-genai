@@ -1,5 +1,6 @@
 """Konversi model OpenVINO yang tidak tersedia sebagai IR siap pakai (wrapper
-`optimum-cli export openvino`): Stable Diffusion v1.5 dan Qwen2-VL-2B. Model Qwen2.5 lain
+`optimum-cli export openvino`): Stable Diffusion v1.5, Qwen2-VL-2B, Coder-1.5B NPU, dan
+Qwen3-Embedding-0.6B (FP16/INT8, `feature-extraction`). Model Qwen2.5 lain
 diunduh langsung sebagai IR oleh download_models.py.
 
     scripts\\conda-run.bat python scripts\\convert_openvino.py --dry-run
@@ -77,10 +78,28 @@ CODER_FILES: SourceFiles = [
         "model.safetensors",
     )
 ]
+EMBED_REPO = "Qwen/Qwen3-Embedding-0.6B"
+EMBED_FILES: SourceFiles = [
+    (f, None)
+    for f in (
+        "config.json",
+        "generation_config.json",
+        "tokenizer.json",
+        "tokenizer_config.json",
+        "vocab.json",
+        "merges.txt",
+        "modules.json",
+        "config_sentence_transformers.json",
+        "1_Pooling/config.json",
+        "README.md",  # model card: lisensi & prompt instruksi
+        "model.safetensors",
+    )
+]
 SOURCES: dict[str, tuple[str, SourceFiles]] = {
     "sd15": (SD_REPO, SD_FILES),
     "qwen2-vl-2b": (VL_REPO, VL_FILES),
     "qwen2.5-coder-1.5b": (CODER_REPO, CODER_FILES),
+    "qwen3-embedding-0.6b": (EMBED_REPO, EMBED_FILES),
 }
 # Dependency khusus konversi, dipasang terpisah (pip --target) dan hanya dimuat proses optimum-cli
 # lewat PYTHONPATH, agar env utama tidak di-downgrade. optimum-intel 2.2 menolak ekspor Qwen2-VL
@@ -102,6 +121,15 @@ TARGETS: dict[str, tuple[str, list[str]]] = {
     "qwen2.5-coder-1.5b-int4-npu": (
         "qwen2.5-coder-1.5b",
         ["--task", "text-generation-with-past", *NPU_INT4],
+    ),
+    # embedding lokal v1 (LGW-V1-01): GPU, last-token pooling dilakukan backend
+    "qwen3-embedding-0.6b-fp16": (
+        "qwen3-embedding-0.6b",
+        ["--task", "feature-extraction", "--weight-format", "fp16"],
+    ),
+    "qwen3-embedding-0.6b-int8": (
+        "qwen3-embedding-0.6b",
+        ["--task", "feature-extraction", "--weight-format", "int8"],
     ),
 }
 

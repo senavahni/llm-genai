@@ -27,7 +27,13 @@ MODEL_TYPES = ("chat", "completion", "embedding", "image")
 MODEL_TIERS = ("light", "heavy")
 MODEL_DEVICES = ("remote", "gpu", "npu", "cpu")
 # retired = model lama yang dinonaktifkan (llama.cpp/embedding lokal), disimpan demi riwayat
-RUNTIME_BACKENDS = ("openvino_llm", "openvino_vlm", "openvino_diffusion", "retired")
+RUNTIME_BACKENDS = (
+    "openvino_llm",
+    "openvino_vlm",
+    "openvino_diffusion",
+    "openvino_embed",
+    "retired",
+)
 
 
 class Model(TimestampMixin, Base):

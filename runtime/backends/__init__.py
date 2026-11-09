@@ -11,6 +11,7 @@ BACKENDS: dict[str, str] = {
     "openvino_llm": "runtime.backends.ov_llm_backend:OVLLMBackend",  # TASK-11
     "openvino_vlm": "runtime.backends.ov_vlm_backend:OVVLMBackend",  # TASK-11
     "openvino_diffusion": "runtime.backends.ov_diffusion_backend:OVDiffusionBackend",  # TASK-12
+    "openvino_embed": "runtime.backends.ov_embed_backend:OVEmbedBackend",  # LGW-V1-02
 }
 
 

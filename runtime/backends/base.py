@@ -35,7 +35,7 @@ class ImageResult:
 
 
 class LocalBackend(ABC):
-    kind: ClassVar[str]  # openvino_llm | openvino_vlm | openvino_diffusion
+    kind: ClassVar[str]  # openvino_llm | openvino_vlm | openvino_diffusion | openvino_embed
 
     def __init__(self, spec: LocalModelSpec) -> None:
         self.spec = spec
@@ -82,6 +82,10 @@ class LocalBackend(ABC):
     ) -> list[ImageResult]:
         """text-to-image; image-to-image bila `req` berisi `image` (base64) + `strength`."""
         raise CapabilityNotSupported(f"{self.spec.alias} tidak mendukung image generation")
+
+    async def embed(self, req: dict[str, Any]) -> dict[str, Any]:
+        """Respons format OpenAI `/v1/embeddings` (data[].embedding + usage)."""
+        raise CapabilityNotSupported(f"{self.spec.alias} tidak mendukung embeddings")
 
 
 async def iterate_in_thread(

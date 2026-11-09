@@ -83,6 +83,12 @@ async def completions(request: Request) -> JSONResponse | StreamingResponse:
     return await _generate(request, "completion")
 
 
+async def embeddings(request: Request) -> JSONResponse:
+    body = await _body(request)
+    result = await _state(request).service.embeddings(body, _request_id(request))
+    return JSONResponse(result)
+
+
 async def image_generations(request: Request) -> JSONResponse:
     body = await _body(request)
     body.pop("image", None)  # text-to-image murni; image-to-image lewat /images/edits

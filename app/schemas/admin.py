@@ -190,7 +190,9 @@ class _ModelFields(_In):
     max_output_tokens: int | None = Field(default=None, ge=1)
     embedding_dimensions: int | None = Field(default=None, ge=1)
     device: Literal["remote", "gpu", "npu", "cpu"] | None = None
-    runtime_backend: Literal["openvino_llm", "openvino_vlm", "openvino_diffusion"] | None = None
+    runtime_backend: (
+        Literal["openvino_llm", "openvino_vlm", "openvino_diffusion", "openvino_embed"] | None
+    ) = None
     artifact_path: str | None = None
     artifact_sha256: str | None = Field(default=None, min_length=64, max_length=64)
     vram_mb: int | None = Field(default=None, ge=0)

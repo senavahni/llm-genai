@@ -307,6 +307,23 @@ async def cmd_create_project(args: argparse.Namespace) -> None:
 
 # kolom model yang boleh diatur profil (state operasional, bukan fakta model)
 _PROFILE_MODEL_FIELDS = ("is_enabled", "is_pinned")
+ENV_FILE = ROOT / ".env"
+
+
+def set_env_value(path: Path, key: str, value: str) -> bool:
+    """Set `KEY=value` di file .env (ganti baris aktif yang ada, atau tambah di akhir).
+    Baris lain (termasuk secret) tidak disentuh. Kembalikan True bila file berubah."""
+    lines = path.read_text(encoding="utf-8").splitlines() if path.exists() else []
+    wanted = f"{key}={value}"
+    idx = next((i for i, ln in enumerate(lines) if ln.split("=", 1)[0].strip() == key), None)
+    if (idx is not None and lines[idx] == wanted) or (idx is None and not value):
+        return False
+    if idx is None:
+        lines.append(wanted)
+    else:
+        lines[idx] = wanted
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return True
 
 
 async def _apply_profile(session: AsyncSession, profile: dict[str, Any]) -> int:
@@ -324,6 +341,12 @@ async def _apply_profile(session: AsyncSession, profile: dict[str, Any]) -> int:
 
     def enabled_after(alias: str) -> bool:
         return bool(wanted_models.get(alias, {}).get("is_enabled", models[alias].is_enabled))
+
+    for alias in profile.get("runtime_allowed_models") or []:
+        if alias not in models or models[alias].device == "remote":
+            raise SystemExit(f"profil {name}: runtime_allowed_models '{alias}' bukan model lokal")
+        if not enabled_after(alias):
+            raise SystemExit(f"profil {name}: runtime_allowed_models '{alias}' nonaktif")
 
     routes = {r.alias: r for r in (await session.execute(select(ModelRoute))).scalars()}
     for r in profile.get("routes") or []:
@@ -447,6 +470,11 @@ async def cmd_apply_profile(args: argparse.Namespace) -> None:
     async with SessionLocal() as session:
         changed = await _apply_profile(session, profile)
     print(f"profil {profile.get('name')}: {changed} perubahan")
+    # whitelist runtime ikut profil; kosong = tanpa pembatasan (profil lama)
+    allowed = ",".join(profile.get("runtime_allowed_models") or [])
+    if set_env_value(ENV_FILE, "RUNTIME_ALLOWED_MODELS", allowed):
+        print(f"  .env: RUNTIME_ALLOWED_MODELS={allowed or '(kosong: semua model enabled)'}")
+        changed += 1
     if changed:
         print(
             "Muat ulang katalog: POST /admin/cache/reload (key admin), atau restart "
@@ -573,6 +601,12 @@ async def cmd_verify_models(args: argparse.Namespace) -> None:
             .scalars()
             .all()
         )
+    allowed = set(get_settings().runtime_allowed_models)
+    if allowed:
+        skipped = sorted(m.alias for m in models if not {m.alias, m.upstream_name} & allowed)
+        models = [m for m in models if {m.alias, m.upstream_name} & allowed]
+        for alias in skipped:
+            print(f"DILEWATI {alias}: di luar RUNTIME_ALLOWED_MODELS")
     problems = 0
     for m in sorted(models, key=lambda x: x.alias):
         path = Path(m.artifact_path or "")

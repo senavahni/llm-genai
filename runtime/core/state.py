@@ -105,4 +105,6 @@ class RuntimeState:
             "pinned": self.pinned_status(),
             "warmup_errors": self.warmup_errors,
             "catalog": sorted(self.catalog.specs),
+            "allowed_models": sorted(self.catalog.allowed),
+            "rejected_not_whitelisted": sorted(set(self.catalog.rejected.values())),
         }

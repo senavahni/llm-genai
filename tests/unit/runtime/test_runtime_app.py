@@ -199,8 +199,8 @@ async def test_model_busy_is_503_and_errors_unknown_model(runtime_app):
         assert r.status_code == 503 and r.json()["error"]["code"] == "model_busy"
         r = await c.post("/v1/chat/completions", headers=TOKEN, json={"model": "nope"})
         assert r.status_code == 404
-        r = await c.post("/v1/embeddings", headers=TOKEN, json={"model": "chat-fast"})
-        assert r.status_code == 404  # tidak ada embedding lokal
+        r = await c.post("/v1/embeddings", headers=TOKEN, json={"model": "nope", "input": "x"})
+        assert r.status_code == 404  # endpoint embedding ada (LGW-V1-02), model tidak
 
 
 async def test_image_generations_and_edits(runtime_app):

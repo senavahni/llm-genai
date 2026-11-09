@@ -95,6 +95,19 @@ class HealthService:
             section["system_ram"] = memory["system"]  # informasi; tidak memengaruhi `ok`
         if not info.get("ok") and info.get("detail"):
             section["detail"] = info["detail"]
+        if not ok:
+            # route yang seluruh kandidatnya lokal (mis. embed-local) tidak bisa melayani
+            catalog = registry.catalog
+            section["degraded_routes"] = sorted(
+                alias
+                for alias, route in catalog.routes.items()
+                if route.is_enabled
+                and route.targets
+                and all(
+                    (m := catalog.models.get(t.model_alias)) is not None and m.is_local
+                    for t in route.targets
+                )
+            )
         return section
 
     async def ready(

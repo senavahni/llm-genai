@@ -16,6 +16,57 @@
 | local/qwen2.5-coder-1.5b | **NPU** (pinned) | INT4 sym per-channel, konversi sendiri | 2800 |
 | local/qwen2-vl-2b | GPU | INT4, konversi sendiri | 2100 |
 | local/sd-1.5 | **NPU** (pinned) | INT8, konversi sendiri; text-to-image + image-to-image | 3300 |
+| local/qwen3-embedding-0.6b | **GPU** (pinned) | INT8, konversi sendiri; embedding 1024 dim (v1.0.0) | 1800 |
+
+## Keputusan 9 November 2026 — embedding lokal (spike LGW-V1-01)
+
+Menggantikan butir "embedding dilayani provider remote" di atas untuk v1.0.0: **satu-satunya**
+model lokal aktif adalah `Qwen/Qwen3-Embedding-0.6B` (lisensi Apache-2.0) di **GPU**, profil
+`remote-embed-gpu`. Model lokal lain tetap di disk tetapi nonaktif dan diblokir whitelist runtime.
+
+| Keputusan | Pilihan | Alasan |
+|---|---|---|
+| Jalur | **OpenVINO GenAI `TextEmbeddingPipeline`** (`runtime_backend: openvino_embed`) | Tokenizer, last-token pooling, dan L2 normalize di dalam pipeline; tanpa torch/optimum di runtime; compile dingin 2,5× lebih cepat dari `optimum.intel` dengan kesetaraan identik |
+| Presisi | **INT8** (weight compression `int8_asym` per-channel) | Lulus kesetaraan dengan margin besar; memori & cache ±½ FP16; compile lebih cepat |
+| Konversi | `convert_openvino.py --only qwen3-embedding-0.6b-int8` (`--task feature-extraction`) | IR di `local_models/openvino/qwen3-embedding-0.6b-int8`, sha256 `015dc031…a7085e` |
+| Batch | `max_batch: 8`, `max_input_tokens: 2048` | Lihat temuan 2 di bawah; angka final di LGW-V1-05 |
+
+**Kesetaraan** (`scripts/spike_embed.py`, set 100 teks `scripts/_embed_eval_set.py`: 30 pendek ID,
+30 pendek EN, 20 campur, 20 panjang ±1.220 token, + 20 query dengan prefix instruksi model card).
+Referensi = transformers FP32 (pooling token terakhir, padding kiri, L2 normalize), hanya pembanding.
+Syarat: kosinus rata-rata ≥ 0,99 dan minimum ≥ 0,98.
+
+| Varian (GPU) | Kosinus rata-rata | Minimum | Compile dingin / cache | Cache | Commit puncak proses | Pendek dok/s b8 / b32 |
+|---|---|---|---|---|---|---|
+| GenAI FP16 | 0,99995 | 0,99963 | 10,2 s / 2,5 s | 1.197 MB | +2.963 MB | 37,8 / 35,2 |
+| **GenAI INT8** | **0,99860** | **0,99721** | **7,0 s / 1,4 s** | **605 MB** | **+2.015 MB** | **41,7 / 47,0** |
+| optimum FP16 | 0,99995 | 0,99963 | 19,7 s / 2,8 s | 1.197 MB | +3.751 MB | 39,2 / 43,7 |
+| optimum INT8 | 0,99863 | 0,99724 | 18,2 s / 1,5 s | 605 MB | +2.866 MB | 44,5 / 47,7 |
+
+Semua varian lulus; kategori terendah INT8 = query (0,99721). Jumlah token dari tokenizer OpenVINO
+sama persis dengan tokenizer HF (diuji `tests/hardware/test_embed.py`).
+
+**Memori perangkat** (counter `GPU Process Memory`, backend runtime sungguhan, INT8):
+
+| Beban | Puncak | Token/s |
+|---|---|---|
+| setelah load (bobot + warmup) | 608–776 MB | – |
+| batch 8 × ±1.670 token | **1.274 MB** | 417 |
+| batch 16 × ±1.670 token | 2.577 MB | 418 |
+| batch 32 × ±1.670 token | 4.250 MB | 444 |
+
+Budget GPU 5.300 MB → `vram_mb: 1800` (b8 × 2.048 token ≈ 1.500 MB + margin) muat dengan sisa
+±3,5 GB; tidak ada model GPU lain di profil ini.
+
+### Temuan spike
+1. **Throughput iGPU dibatasi komputasi**, bukan compile ulang per shape: batch shape identik
+   berulang sama lambatnya (0,34 dok/s untuk teks ±1.220 token). Kira-kira **±420–440 token/s**
+   untuk chunk panjang, **±730 token/s** untuk teks pendek (±15 token). Proyeksi kasar: 1 juta
+   token (buku ±2.000 chunk × 500 token) ≈ 40 menit. Benchmark lengkap = LGW-V1-05.
+2. **Batch besar tidak menambah token/s untuk teks panjang tetapi memori naik tajam** (b32 = 4,25 GB,
+   hampir seluruh budget GPU). Karena itu `max_batch: 8`. Batas berbasis jumlah token per batch
+   layak dipertimbangkan di LGW-V1-04/05.
+3. Compile pertama INT8 ±7 s, dari cache ±1,4 s → warmup model pinned saat start cepat.
 
 ## Hasil probe (`scripts\probe_devices.py`, detail: `logs\device_probe.json`)
 
@@ -136,7 +187,8 @@ Waktu CPU proses ÷ waktu dinding selama generate (10 core → nilai maksimal ±
 ```bat
 scripts\conda-run.bat python scripts\probe_devices.py
 scripts\conda-run.bat python scripts\download_models.py --write-yaml     :: Qwen2.5 7B (IR siap pakai)
-scripts\conda-run.bat python scripts\convert_openvino.py --write-yaml    :: SD INT8, Qwen2-VL, Coder-1.5B NPU
+scripts\conda-run.bat python scripts\convert_openvino.py --write-yaml    :: SD INT8, Qwen2-VL, Coder-1.5B NPU, Qwen3-Embedding
+scripts\conda-run.bat python scripts\spike_embed.py                      :: kesetaraan embedding (LGW-V1-01)
 scripts\conda-run.bat python scripts\test_sd.py                          :: 2× (cek cache)
 scripts\conda-run.bat python scripts\smoke_local.py                      :: juga menghangatkan cache
 scripts\conda-run.bat python scripts\measure_models.py --update-yaml     :: setelah cache hangat

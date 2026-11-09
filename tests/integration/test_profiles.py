@@ -102,6 +102,58 @@ async def test_remote_only_disables_runtime_and_local_routes(db):
     assert runtime_on and models["local/qwen2-vl-2b"] and models["local/qwen2.5-coder-1.5b"]
 
 
+async def test_remote_embed_gpu_only_embedding_model_local(db):  # LGW-V1-03
+    manage = _manage()
+    profile = _profile("remote-embed-gpu")
+    async with SessionLocal() as s:
+        await manage._seed(s, load_seed(), update_local=False)
+        await manage._apply_profile(s, profile)
+    models, routes = await _state()
+    local_on = sorted(a for a, on in models.items() if a.startswith("local/") and on)
+    assert local_on == ["local/qwen3-embedding-0.6b"]
+    assert profile["runtime_allowed_models"] == local_on
+    assert routes["embed-local"] == (True, [("local/qwen3-embedding-0.6b", 1)])  # tanpa fallback
+    assert routes["embed-default"][1] == [("openai/text-embedding-3-small", 1)]  # tidak berubah
+    assert all(not routes[a][0] for a in ("local", "autocomplete", "image"))
+    for alias in ("fast", "smart", "code", "vision"):
+        assert routes[alias][1] == routes_of(_profile("remote-only"))[alias]
+    async with SessionLocal() as s:
+        runtime_on = await s.scalar(select(Provider.is_enabled).where(Provider.code == "openvino"))
+        pinned = await s.scalar(
+            select(Model.is_pinned).where(Model.alias == "local/qwen3-embedding-0.6b")
+        )
+    assert runtime_on and pinned
+
+
+def routes_of(profile: dict) -> dict[str, list[tuple[str, int]]]:
+    return {
+        r["alias"]: sorted((t["model"], t.get("priority", 1)) for t in r["targets"])
+        for r in profile["routes"]
+        if r.get("targets")
+    }
+
+
+async def test_runtime_allowed_models_must_be_enabled_local_models(db):
+    manage = _manage()
+    async with SessionLocal() as s:
+        await manage._seed(s, load_seed(), update_local=False)
+    before = await _state()
+    for bad, match in (
+        ({"runtime_allowed_models": ["openai/gpt-light"]}, "bukan model lokal"),
+        (
+            {
+                "runtime_allowed_models": ["local/sd-1.5"],
+                "models": {"local/sd-1.5": {"is_enabled": False}},
+            },
+            "nonaktif",
+        ),
+    ):
+        async with SessionLocal() as s:
+            with pytest.raises(SystemExit, match=match):
+                await manage._apply_profile(s, {"name": "x", **bad})
+    assert await _state() == before
+
+
 async def test_invalid_profile_rejected_without_changes(db):
     manage = _manage()
     async with SessionLocal() as s:

@@ -249,7 +249,9 @@ async def test_seed_idempotent_and_complete(db):
     async with SessionLocal() as s:
         assert await _count(s, Provider) == len(data["providers"])
         n_local = len([m for m in data["models"] if m.get("device", "remote") != "remote"])
-        assert await _count(s, Model, Model.device != "remote") == n_local == 5
+        assert (
+            await _count(s, Model, Model.device != "remote") == n_local == 6
+        )  # +1 embedding lokal
         assert await _count(s, ModelRoute) == len(data["routes"])
         n_targets = sum(len(r["targets"]) for r in data["routes"])
         assert await _count(s, ModelRouteTarget) == n_targets

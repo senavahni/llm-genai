@@ -68,11 +68,17 @@ def test_catalog_is_qwen_and_sd_on_openvino_gpu_npu():
         "local/qwen2.5-7b",
         "local/qwen2.5-coder-1.5b",
         "local/qwen2.5-coder-7b",
+        "local/qwen3-embedding-0.6b",
         "local/sd-1.5",
     ]
     for m in models:
         assert m["provider"] == "openvino"
-        assert m["runtime_backend"] in ("openvino_llm", "openvino_vlm", "openvino_diffusion")
+        assert m["runtime_backend"] in (
+            "openvino_llm",
+            "openvino_vlm",
+            "openvino_diffusion",
+            "openvino_embed",
+        )
         assert m["device"] in ("gpu", "npu")
         devices = [m["config"]["device"], *(m["config"].get("component_devices") or {}).values()]
         assert all(d == m["device"].upper() or d in ("GPU", "NPU") for d in devices)
@@ -85,6 +91,31 @@ def test_routes_only_reference_catalog_models():
     for route in data["routes"]:
         for target in route["targets"]:
             assert target["model"] in aliases, (route["alias"], target["model"])
+
+
+def test_embed_local_route_has_single_local_candidate():
+    data = load_seed()
+    route = next(r for r in data["routes"] if r["alias"] == "embed-local")
+    assert [t["model"] for t in route["targets"]] == ["local/qwen3-embedding-0.6b"]
+    model = next(m for m in data["models"] if m["alias"] == "local/qwen3-embedding-0.6b")
+    assert model["device"] == "gpu" and model["config"]["device"] == "GPU"
+    assert model["embedding_dimensions"] == 1024 and model["model_type"] == "embedding"
+
+
+def test_set_env_value_replaces_only_target_line(tmp_path):
+    from scripts.manage import set_env_value
+
+    env = tmp_path / ".env"
+    env.write_text("# komentar\nRUNTIME_TOKEN=rahasia\nRUNTIME_ALLOWED_MODELS=old\n")
+    assert set_env_value(env, "RUNTIME_ALLOWED_MODELS", "local/a,local/b")
+    assert env.read_text() == (
+        "# komentar\nRUNTIME_TOKEN=rahasia\nRUNTIME_ALLOWED_MODELS=local/a,local/b\n"
+    )
+    assert not set_env_value(env, "RUNTIME_ALLOWED_MODELS", "local/a,local/b")  # idempoten
+    env.write_text("RUNTIME_TOKEN=rahasia\n")
+    assert not set_env_value(env, "RUNTIME_ALLOWED_MODELS", "")  # kosong & belum ada: tidak ditulis
+    assert set_env_value(env, "RUNTIME_ALLOWED_MODELS", "local/a")
+    assert env.read_text() == "RUNTIME_TOKEN=rahasia\nRUNTIME_ALLOWED_MODELS=local/a\n"
 
 
 def test_npu_pipeline_properties():

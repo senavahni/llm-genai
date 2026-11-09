@@ -92,7 +92,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await init_db(settings)
 
     events = EventService(Path(settings.log_dir) / "runtime_events_fallback.jsonl")
-    catalog = RuntimeCatalog()
+    catalog = RuntimeCatalog(allowed=settings.runtime_allowed_models)
+    if catalog.allowed:
+        log.info("runtime_whitelist", allowed=sorted(catalog.allowed))
     try:
         await catalog.load()
     except Exception as exc:

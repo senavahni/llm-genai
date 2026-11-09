@@ -1,5 +1,5 @@
-"""/v1/embeddings dengan router & fallback (TASK-14). Embedding lokal tidak ada lagi
-(keputusan 28 Okt 2026), jadi praktis remote; input token-ID hanya untuk model remote."""
+"""/v1/embeddings dengan router & fallback (TASK-14). Embedding lokal = Qwen3-Embedding di GPU
+lewat Local Runtime (route `embed-local`, LGW-V1-02); input token-ID hanya untuk model remote."""
 
 from typing import Any
 

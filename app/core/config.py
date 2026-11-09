@@ -82,8 +82,11 @@ class Settings(BaseSettings):
     runtime_queue_timeout_s: int = 30
     runtime_min_residency_s: int = 60
     local_first_token_timeout_s: int = 120
+    # whitelist runtime (alias gateway atau upstream_name), diisi `manage.py apply-profile`.
+    # Kosong = tanpa pembatasan (profil lama). Model di luar daftar tidak pernah di-load/compile.
+    runtime_allowed_models: Annotated[list[str], NoDecode] = Field(default_factory=list)
 
-    @field_validator("cors_origins", mode="before")
+    @field_validator("cors_origins", "runtime_allowed_models", mode="before")
     @classmethod
     def _split_origins(cls, v: object) -> object:
         if isinstance(v, str):

@@ -19,6 +19,7 @@ models:
   local/qwen2.5-coder-1.5b: {is_enabled: false}
   local/qwen2-vl-2b: {is_enabled: false}
   local/sd-1.5: {is_enabled: false}
+  local/qwen3-embedding-0.6b: {is_enabled: false}
 
 routes:
   - alias: fast
@@ -36,4 +37,6 @@ routes:
   - alias: autocomplete
     is_enabled: false
   - alias: image
+    is_enabled: false
+  - alias: embed-local
     is_enabled: false

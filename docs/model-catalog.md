@@ -6,12 +6,14 @@ Runtime lokal membaca model `device ∈ {gpu, npu}` dari DB (`POST /admin/cache/
 perubahan).
 
 Sejak 28 Okt 2026 model lokal hanya keluarga **Qwen + Stable Diffusion v1.5**, semuanya OpenVINO
-IR di GPU/NPU (keputusan & pengukuran: `docs/hardware.md`). Tidak ada embedding lokal; embedding
-dilayani provider remote.
+IR di GPU/NPU (keputusan & pengukuran: `docs/hardware.md`). Sejak v1.0.0 (9 Nov 2026) ada satu
+model embedding lokal, `local/qwen3-embedding-0.6b` (GPU, 1024 dim, route `embed-local`);
+embedding 1536/3072 dim tetap dilayani provider remote (`embed-default`).
 
-> **Status saat ini (30 Okt 2026): profil `remote-only`.** Semua model lokal nonaktif agar mesin
-> ringan; gateway hanya memakai API remote. Lihat [Profil operasional](#profil-operasional) untuk
-> mengaktifkan kembali, dan [Menambah API pihak ketiga](#menambah-api-pihak-ketiga-provider-custom)
+> **Status saat ini (9 Nov 2026): profil `remote-embed-gpu`.** Chat lewat API remote; satu-satunya
+> model lokal yang aktif dan termuat adalah Qwen3-Embedding-0.6B di GPU, model lokal lain
+> nonaktif dan diblokir whitelist runtime. Lihat [Profil operasional](#profil-operasional), dan
+> [Menambah API pihak ketiga](#menambah-api-pihak-ketiga-provider-custom)
 > untuk provider selain OpenAI/Anthropic/Gemini.
 
 ## Model lokal
@@ -23,6 +25,7 @@ dilayani provider remote.
 | `local/qwen2.5-coder-1.5b` | NPU, pinned | INT4 sym per-channel | 2800 | 4096 / 1024 (FIM ±256 token konteks) | completion, **FIM** | tab-autocomplete |
 | `local/qwen2-vl-2b` | GPU | INT4 | 2100 | 4096 / 2048, ≤ 4 gambar ≤ 1280 px | chat, stream, **vision** | OCR/deskripsi gambar ringan |
 | `local/sd-1.5` | NPU, pinned | INT8 | 3300 | 512×512, 25 step default (maks 50) | text→image, image→image | ilustrasi, draft gambar |
+| `local/qwen3-embedding-0.6b` | GPU, pinned | INT8 (`int8_asym`) | 1800 | input ≤ 2048 token, batch ≤ 8 | embedding 1024 dim | embedding lokal (route `embed-local`) |
 
 `vram_mb` diukur dengan `scripts/measure_models.py` (puncak memori proses di GPU/NPU, cache compile
 hangat). GPU & NPU di mesin target memakai **RAM sistem** (UMA), lihat
@@ -37,6 +40,7 @@ hangat). GPU & NPU di mesin target memakai **RAM sistem** (UMA), lihat
 | `local/qwen2.5-coder-1.5b` | `Qwen/Qwen2.5-Coder-1.5B-Instruct`, dikonversi lokal | `local_models/openvino/qwen2.5-coder-1.5b-int4-npu` | Apache-2.0 | bebas, cantumkan atribusi |
 | `local/qwen2-vl-2b` | `Qwen/Qwen2-VL-2B-Instruct`, dikonversi lokal | `local_models/openvino/qwen2-vl-2b-int4` | Apache-2.0 | bebas, cantumkan atribusi |
 | `local/sd-1.5` | `stable-diffusion-v1-5/stable-diffusion-v1-5`, dikonversi lokal | `local_models/openvino/sd15-int8` | CreativeML OpenRAIL-M | larangan penggunaan (lampiran A lisensi) wajib diteruskan ke pengguna; pipeline tanpa safety checker → kebijakan konten tanggung jawab project pemanggil |
+| `local/qwen3-embedding-0.6b` | `Qwen/Qwen3-Embedding-0.6B`, dikonversi lokal (`--task feature-extraction`) | `local_models/openvino/qwen3-embedding-0.6b-int8` | Apache-2.0 | bebas, cantumkan atribusi |
 
 Ringkasan lisensi bukan nasihat hukum; baca teks lengkap di halaman repo masing-masing.
 Integritas: `artifact_sha256` = digest folder IR (sha256 tiap file, path terurut;
@@ -71,7 +75,8 @@ waktu ke waktu: cek dokumentasi resmi provider, lalu perbarui lewat Admin API (t
 | `autocomplete` | qwen2.5-coder-1.5b | FIM editor (latensi rendah, NPU) |
 | `vision` | qwen2-vl-2b → gpt-light | gambar → teks |
 | `image` | sd-1.5 | text→image, image→image |
-| `embed-default` | openai/text-embedding-3-small | embeddings |
+| `embed-default` | openai/text-embedding-3-small | embeddings 1536 dim |
+| `embed-local` | local/qwen3-embedding-0.6b | embeddings 1024 dim di GPU; kandidat tunggal, **tanpa fallback** ke model berdimensi lain |
 
 Fallback terjadi sebelum token pertama (error upstream, timeout, `model_busy`, provider nonaktif).
 Kandidat yang tidak punya kapabilitas yang diminta (tools, vision, JSON, FIM) dilewati.
@@ -192,7 +197,8 @@ scripts\conda-run.bat python scripts\manage.py apply-profile remote-only
 
 | Profil | Model lokal | Route | Menjalankan |
 |---|---|---|---|
-| `remote-only` (**aktif sejak 30 Okt 2026**) | semua nonaktif, provider `openvino` mati | `fast`, `smart`, `code`, `vision` = kandidat remote; `local`, `autocomplete`, `image` dimatikan | `start-all.bat --no-runtime` |
+| `remote-embed-gpu` (**aktif sejak 9 Nov 2026**) | hanya `local/qwen3-embedding-0.6b` (GPU, pinned); lainnya nonaktif; `RUNTIME_ALLOWED_MODELS` diisi model itu saja | route remote seperti `remote-only` + `embed-local`; `local`, `autocomplete`, `image` dimatikan | `start-all.bat` (runtime ikut) |
+| `remote-only` (aktif 30 Okt–9 Nov 2026) | semua nonaktif, provider `openvino` mati | `fast`, `smart`, `code`, `vision` = kandidat remote; `local`, `autocomplete`, `image` dimatikan | `start-all.bat --no-runtime` |
 | `ram16` | Coder-1.5B (NPU) + VL-2B (GPU) | kandidat lokal kecil + remote | `start-all.bat` |
 | `full` | semua (butuh RAM ≥ 32 GB) | sama dengan `seed_models.yaml` | `start-all.bat` |
 
@@ -200,3 +206,8 @@ Model nonaktif tidak memakai RAM sama sekali, dan file model + cache compile Ope
 disk, jadi pindah profil tidak perlu unduh/compile ulang. Setiap perubahan profil tercatat di
 audit log. Setelah menerapkan profil: restart (`stop-all.bat --keep-db` lalu `start-all.bat`,
 dengan `--no-runtime` untuk `remote-only`).
+
+**Whitelist runtime.** `apply-profile` menulis `RUNTIME_ALLOWED_MODELS` ke `.env` (diisi dari
+`runtime_allowed_models` profil; kosong = semua model enabled). Runtime membuang model di luar
+whitelist dari katalog: tidak di-load/compile/warmup, dan `cache/reload`, `smoke_local.py`,
+`manage.py verify-models` menolak/melewatinya (`model_not_whitelisted`).
