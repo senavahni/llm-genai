@@ -96,6 +96,79 @@ _Diukur 2026-10-28 07:47 UTC lewat gateway (`tests/bench/bench_local.py`)._
 
 <!-- bench:end -->
 
+## Embedding lokal (GPU) — v1.0.0 (LGW-V1-05)
+
+Diukur 10 November 2026, `local/qwen3-embedding-0.6b` (INT8, `TextEmbeddingPipeline`, iGPU),
+`scripts\conda-run.bat python scripts\bench_embed.py throughput|latency|quality`; JSON mentah di
+`local_models/spike/bench/`. Kesetaraan vs PyTorch & keputusan presisi: `docs/hardware.md`.
+
+### Throughput × batch (chunk/detik, token/detik, memori perangkat)
+
+| Token/chunk | b8 | b16 | b32 | b64 |
+|---|---|---|---|---|
+| 200 | **5,21** (1.043 tok/s) | 5,19 (1.039) | 4,90 (980) | 4,70 (941) |
+| 500 | **1,57** (785) | 1,65 (824) | 1,60 (799) | 1,59 (793) |
+| 800 | **0,94** (752) | 0,85 (680) | 0,84 (671) | tidak diukur¹ |
+| 1.000 | **0,68** (676) | 0,64 (636) | 0,63 (633) | tidak diukur¹ |
+
+Memori perangkat (counter `GPU Process Memory`, puncak kumulatif proses — pool plugin GPU tidak
+mengecil): 676 MB setelah load; 1.250 MB setelah b8×500; 2.265 MB setelah b8×1.000; 2.534 MB
+b64×500; 2.331 MB b32×1.000. ¹ > 32.768 token ber-padding per batch, dilewati (berisiko melewati
+budget GPU 5.300 MB / RAM UMA; spike: b32 × 1.670 token = 4.250 MB).
+
+**Kesimpulan:** iGPU dibatasi komputasi — batch > 8 tidak mempercepat (malah sedikit melambat)
+tetapi menambah memori. Throughput bergantung panjang chunk: ±1.040 token/s (200 token) turun ke
+±680 token/s (1.000 token, biaya atensi).
+
+### Latensi interactive saat ada beban bulk
+
+Job bulk 96 chunk × 500 token (`X-Priority: bulk`), query interactive (1 teks pendek ber-prefix)
+setiap 2 detik; idle (tanpa bulk) ±70–100 ms.
+
+| `max_batch_tokens` | Interactive p50 | p95 | maks | Bulk chunk/s |
+|---|---|---|---|---|
+| 1.024² | 913 ms | 1.551 ms | 1.714 ms | 1,36 |
+| **2.048 (default)** | **1.018 ms** | **1.600 ms** | 2.304 ms | 1,24–1,40 |
+| 4.096 | 3.538 ms | 3.815 ms | 4.139 ms | 1,46 |
+
+Interactive dilayani di antara batch bulk (antrean prioritas per batch), jadi latensinya ≈ sisa
+satu batch bulk + inferensinya sendiri. ² Nilai < `max_input_tokens` (2.048) dinaikkan otomatis
+ke 2.048 oleh backend, sehingga 2.048 adalah batas bawah efektif dan dipilih sebagai default.
+Ukuran pertama (sebelum interactive memegang satu lease untuk rencana + batch-nya) p50 3,8 s —
+sudah diperbaiki.
+
+### Kualitas (set eval KB MCP: 3 brief → 24 chunk per bagian, 30 pertanyaan ID)
+
+| Model | recall@1 | recall@3 | recall@6 |
+|---|---|---|---|
+| `embed-local` (query + prefix instruksi, `input_type=query`) | **0,733** | **0,967** | 0,967 |
+| `embed-local` tanpa prefix | 0,667 | 0,933 | 1,000 |
+| `embed-default` (`openai/text-embedding-3-small`) | 0,700 | 0,933 | 1,000 |
+
+Dense saja (tanpa hybrid/keyword MCP). Kualitas setara `embed-default`; pool kecil membuat @6
+jenuh sehingga @1/@3 lebih membedakan. Target MCP-V1-04 (recall@6 hybrid ≥ 0,85) diuji di MCP.
+
+### Proyeksi (bulk, 1 job, tanpa beban interactive berat)
+
+| Beban | Asumsi | Perkiraan |
+|---|---|---|
+| Buku 500 halaman | 1.500–2.500 chunk × 500 token @ ±1,4–1,6 chunk/s | **±16–30 menit** |
+| Import 1.000 baris (klasifikasi) | teks ±50 token, ±18 baris/s (interpolasi dari 15 & 200 token, tidak diukur langsung) | **±1 menit** |
+| 100 perusahaan × 8 halaman | 800–1.600 chunk × 800 token @ ±0,9 chunk/s | **±15–30 menit** |
+
+Rumus kasar untuk MCP: menit ≈ total token ÷ 42.000 (±700 token/s).
+
+### Rekomendasi & default yang ditetapkan
+
+| Parameter | Nilai | Catatan |
+|---|---|---|
+| `max_batch` | 8 | tercepat/setara dengan memori terkecil |
+| `max_input_tokens` | 2.048 | MCP chunk ≤ 1.024 token sudah aman; lebih panjang → `input_too_long` atau `truncate` |
+| `max_batch_tokens` | 2.048 | interactive p95 ±1,6 s di bawah bulk |
+| `RUNTIME_BULK_CONCURRENCY` | 1 | job bulk antre FIFO; tidak saling memperlambat |
+| Ukuran request bulk dari MCP | ≤ 64 chunk (≤ 1.024 token) per request | ±1,5 menit per request, jauh di bawah timeout provider 300 s & `RUNTIME_BULK_QUEUE_TIMEOUT_S` |
+| Target ingest MCP-V1-11 | ≥ 1,2 chunk/s (500 token) | buku 2.000 chunk < 30 menit |
+
 ## RAM sistem
 
 MARK_RAM

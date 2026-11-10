@@ -85,6 +85,10 @@ class Settings(BaseSettings):
     # whitelist runtime (alias gateway atau upstream_name), diisi `manage.py apply-profile`.
     # Kosong = tanpa pembatasan (profil lama). Model di luar daftar tidak pernah di-load/compile.
     runtime_allowed_models: Annotated[list[str], NoDecode] = Field(default_factory=list)
+    # embedding volume besar (LGW-V1-04): request X-Priority: bulk yang diproses bersamaan;
+    # sisanya antre (maks. timeout di bawah). Request interactive tidak dibatasi di sini.
+    runtime_bulk_concurrency: int = Field(default=1, ge=1)
+    runtime_bulk_queue_timeout_s: int = Field(default=300, ge=1)
 
     @field_validator("cors_origins", "runtime_allowed_models", mode="before")
     @classmethod

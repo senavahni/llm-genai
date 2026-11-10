@@ -136,6 +136,38 @@ def test_payload_optional_fields_and_prefill():
     assert built.prefill == "{"
 
 
+SCHEMA = {
+    "type": "object",
+    "properties": {"kota": {"type": "string"}},
+    "required": ["kota"],
+    "additionalProperties": False,
+}
+
+
+def test_json_schema_uses_native_output_config_not_prefill():  # LGW-V1-06
+    # strategi prefill diabaikan bila ada skema: prefill ditolak (400) di model Claude 4.6+
+    model = model_cfg("anthropic", "c", config={"json_mode_strategy": "prefill"})
+    rf = {"type": "json_schema", "json_schema": {"name": "kota", "schema": SCHEMA}}
+    built = am.build_payload(model, _req([{"role": "user", "content": "x"}], response_format=rf))
+    assert built.payload["output_config"] == {"format": {"type": "json_schema", "schema": SCHEMA}}
+    assert built.prefill is None
+    assert built.payload["messages"][-1]["role"] == "user"
+    kwargs = AnthropicProvider._kwargs(built.payload)
+    assert kwargs["extra_body"]["output_config"]["format"]["type"] == "json_schema"
+
+
+def test_json_object_without_schema_adds_system_instruction():
+    built = am.build_payload(
+        MODEL,
+        _req(
+            [{"role": "system", "content": "S"}, {"role": "user", "content": "x"}],
+            response_format={"type": "json_object"},
+        ),
+    )
+    assert built.payload["system"] == f"S\n\n{am.JSON_OBJECT_INSTRUCTION}"
+    assert "output_config" not in built.payload and built.prefill is None
+
+
 @pytest.mark.parametrize(
     ("reason", "expected"),
     [

@@ -157,9 +157,15 @@ models:
     supports_streaming: false
     embedding_dimensions: 1024
     context_window: 32768
-    # max_batch 8: batch lebih besar tidak menambah token/s di iGPU (±420–440) tetapi memori naik
-    # tajam (b32 × 1.670 token = 4.250 MB). Angka final dari benchmark LGW-V1-05.
+    # Benchmark LGW-V1-05 (docs/perf-report.md): batch 8 sama cepat dengan 16–64 (±680–1.040
+    # token/s) dengan memori terkecil; max_batch_tokens 2048 → interactive p95 1,6 s saat bulk.
+    # LGW-V1-04: max_batch_tokens = token ber-padding per batch (jeda maks. interactive saat
+    # ada bulk); MRL 32–1024 (model card); prefix query dipasang Gateway (input_type=query).
     config: {device: GPU, pooling: last_token, max_batch: 8, max_input_tokens: 2048,
+             max_batch_tokens: 2048, mrl_min_dimensions: 32,
+             embedding_instructions: {
+               query: "Instruct: Given a web search query, retrieve relevant passages that answer the query\nQuery: ",
+               document: ""},
              cache_dir: local_models/ov_cache}
 
   # ===================== Remote (contoh) =====================
@@ -221,6 +227,12 @@ routes:
   - alias: smart
     description: task berat / agent
     targets: [{model: anthropic/claude-sonnet, priority: 1}, {model: openai/gpt-heavy, priority: 2}, {model: local/qwen2.5-7b, priority: 3}]
+  - alias: creative
+    description: konten kreatif (Claude Sonnet 5.5; tanpa ANTHROPIC_API_KEY langsung gpt-5)
+    targets: [{model: anthropic/claude-sonnet, priority: 1}, {model: openai/gpt-heavy, priority: 2}]
+  - alias: extract
+    description: ekstraksi terstruktur / LLM assist (JSON mode, gpt-5-mini)
+    targets: [{model: openai/gpt-light, priority: 1}]
   - alias: local
     description: lokal saja (privasi)
     targets: [{model: local/qwen2.5-7b, priority: 1}, {model: local/qwen2.5-coder-7b, priority: 2}]

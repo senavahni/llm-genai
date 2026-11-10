@@ -50,6 +50,12 @@ class Request(CreatedAtMixin, Base):
             postgresql_where=text("device IN ('gpu', 'npu', 'cpu')"),
         ),
         Index("brin_requests_created", "created_at", postgresql_using="brin"),
+        Index(
+            "ix_requests_tags_gin",
+            "tags",
+            postgresql_using="gin",
+            postgresql_ops={"tags": "jsonb_path_ops"},
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True)  # = request_id, dibuat gateway

@@ -13,6 +13,26 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id-ID/1.1.0/), ve
   seluruh kandidatnya lokal sebagai degraded bila runtime mati. Hasil spike: `docs/hardware.md`.
 - Profil `remote-embed-gpu` dan whitelist `RUNTIME_ALLOWED_MODELS` (runtime menolak
   load/compile/warmup model di luar whitelist).
+- **Embedding volume besar (LGW-V1-04)**: batch backend dibatasi jumlah input (`max_batch`) dan
+  token ber-padding (`max_batch_tokens`), urutan output dijaga; input > `max_input_tokens` →
+  `400 input_too_long` + indeks, atau dipotong bila `provider_options.truncate=true`
+  (+ `X-Gateway-Warning: input_truncated:N`); `provider_options.input_type=query|document`
+  menerapkan `embedding_instructions` model; `dimensions` (MRL 32–1024) hanya untuk model yang
+  mendukung; header `X-Priority: interactive|bulk` → antrean prioritas per batch di runtime
+  (interactive menyela bulk) + `RUNTIME_BULK_CONCURRENCY`/`RUNTIME_BULK_QUEUE_TIMEOUT_S`.
+- **Benchmark embedding GPU (LGW-V1-05)**: `scripts/bench_embed.py` (throughput × batch,
+  latensi interactive di bawah bulk, recall vs `embed-default`); hasil di `docs/perf-report.md`.
+- **LGW-V1-06**: route `creative` (Claude Sonnet 5.5 → gpt-5) dan `extract` (gpt-5-mini, JSON);
+  profil `remote-embed-gpu` memakai `smart` = gpt-5. Header `X-Request-Tags`
+  (`job=…,kind=…,stage=…,agent=…`, ≤ 5 pasang, nilai tanpa spasi/`@`; tidak valid → diabaikan +
+  warning) disimpan di `requests.tags` (index GIN, migrasi `0006_usage_tags`);
+  `GET /admin/usage/by-tag?key=…&match=job:…`. Kuota project memberi
+  `X-Gateway-Warning: quota_80pct:<periode>_<metrik>` saat pemakaian ≥ 80% batas.
+
+### Diubah
+- Adapter Anthropic: `response_format: json_schema` memakai structured outputs native
+  (`output_config.format`), bukan prefill (ditolak model Claude 4.6+); `json_object` tanpa skema
+  → instruksi di system prompt.
 - **Admin Console** `http://127.0.0.1:8000/console` (HTML/JS/CSS statis tanpa build, CSP
   `script-src 'self'`, `frame-ancestors 'none'`, `no-store`): hanya dari peer loopback + Host lokal.
   Masuk dengan admin key `lgw_` (hanya di memori tab, kunci otomatis 15 menit idle). Menu: Mulai

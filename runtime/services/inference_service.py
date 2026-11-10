@@ -9,10 +9,12 @@ import time
 from collections.abc import AsyncIterator
 from typing import Any
 
-from app.utils.errors import DeviceUnavailable
+from app.utils.errors import DeviceUnavailable, InvalidRequestError, ModelBusy, RequestCancelled
+from runtime.backends.base import embedding_response
 from runtime.core import metrics as runtime_metrics
 from runtime.core.catalog import LocalModelSpec, RuntimeCatalog
 from runtime.device.manager import DeviceManager, Lease
+from runtime.device.priority import BULK, PRIORITIES
 
 
 def x_runtime(lease: Lease, infer_ms: int | None) -> dict[str, Any]:
@@ -33,9 +35,18 @@ def _with_warnings(meta: dict[str, Any], warnings: list[str] | None) -> dict[str
 
 
 class InferenceService:
-    def __init__(self, catalog: RuntimeCatalog, managers: dict[str, DeviceManager]) -> None:
+    def __init__(
+        self,
+        catalog: RuntimeCatalog,
+        managers: dict[str, DeviceManager],
+        *,
+        bulk_concurrency: int = 1,
+        bulk_queue_timeout_s: float = 300,
+    ) -> None:
         self.catalog = catalog
         self.managers = managers
+        self.bulk_gate = asyncio.Semaphore(bulk_concurrency)
+        self.bulk_queue_timeout_s = bulk_queue_timeout_s
 
     def resolve(self, name: str) -> tuple[LocalModelSpec, DeviceManager]:
         spec = self.catalog.get(name)
@@ -68,8 +79,77 @@ class InferenceService:
         )
         return result
 
-    async def embeddings(self, body: dict[str, Any], request_id: str | None) -> dict[str, Any]:
-        return await self._call("embed", body, request_id)
+    async def embeddings(
+        self,
+        body: dict[str, Any],
+        request_id: str | None,
+        cancel: asyncio.Event | None = None,
+    ) -> dict[str, Any]:
+        """LGW-V1-04: rencana batch dibuat sekali, lalu SETIAP batch meminjam model lewat antrean
+        prioritas → request interactive menyela di antara batch bulk. Request bulk dibatasi
+        RUNTIME_BULK_CONCURRENCY agar beberapa ingest tidak saling memperlambat."""
+        priority_name = str(body.get("priority") or "interactive")
+        if priority_name not in PRIORITIES:
+            raise InvalidRequestError("priority harus interactive atau bulk", param="priority")
+        priority = PRIORITIES[priority_name]
+        spec, manager = self.resolve(body["model"])
+        if priority != BULK:
+            return await self._embed(spec, manager, body, request_id, priority, cancel)
+        try:
+            await asyncio.wait_for(self.bulk_gate.acquire(), timeout=self.bulk_queue_timeout_s)
+        except TimeoutError:
+            raise ModelBusy(
+                f"{spec.alias}: antrean bulk penuh > {self.bulk_queue_timeout_s:g} detik"
+            ) from None
+        try:
+            return await self._embed(spec, manager, body, request_id, priority, cancel)
+        finally:
+            self.bulk_gate.release()
+
+    async def _embed(
+        self,
+        spec: LocalModelSpec,
+        manager: DeviceManager,
+        body: dict[str, Any],
+        request_id: str | None,
+        priority: int,
+        cancel: asyncio.Event | None,
+    ) -> dict[str, Any]:
+        start = time.perf_counter()
+        load_ms = queue_ms = 0
+        vectors: list[list[float]] = []
+        async with manager.acquire(spec, request_id, priority) as lease:
+            plan = await lease.backend.plan_embeddings(body)
+            load_ms, queue_ms, device = lease.load_ms, lease.queue_ms, lease.device
+            # interactive: rencana + semua batch dalam SATU lease (tidak antre ulang di belakang
+            # batch bulk); bulk: batch pertama saja, sisanya antre per batch
+            take = 1 if priority == BULK else len(plan.batches)
+            for batch in plan.batches[:take]:
+                vectors += await lease.backend.embed_batch(batch, plan.dimensions)
+        for batch in plan.batches[take:]:
+            if cancel is not None and cancel.is_set():
+                raise RequestCancelled("Embedding dibatalkan (klien terputus)")
+            async with manager.acquire(spec, request_id, priority) as lease:
+                vectors += await lease.backend.embed_batch(batch, plan.dimensions)
+                load_ms += lease.load_ms
+                queue_ms += lease.queue_ms
+        infer_ms = int((time.perf_counter() - start) * 1000) - queue_ms - load_ms
+        runtime_metrics.QUEUE_WAIT.labels(spec.alias).observe(queue_ms / 1000)
+        result = embedding_response(spec.upstream_name, vectors, plan)
+        result.pop("_warnings", None)
+        result["x_runtime"] = _with_warnings(
+            {
+                "device": device,
+                "backend": spec.runtime_backend,
+                "load_ms": load_ms,
+                "queue_ms": queue_ms,
+                "infer_ms": max(infer_ms, 0),
+                "batches": len(plan.batches),
+                "priority": "bulk" if priority == BULK else "interactive",
+            },
+            list(plan.warnings),
+        )
+        return result
 
     async def images(
         self, body: dict[str, Any], request_id: str | None, cancel: asyncio.Event

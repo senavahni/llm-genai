@@ -3,7 +3,8 @@
 
 import base64
 import uuid
-from datetime import datetime
+from datetime import UTC, date, datetime, time, timedelta
+from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import ColumnElement, Select, and_, func, or_, select, tuple_
@@ -187,6 +188,64 @@ async def usage(session: AsyncSession, q: UsageQuery) -> dict[str, Any]:
             }
             for r in rows
         ],
+    }
+
+
+async def usage_by_tag(
+    session: AsyncSession,
+    *,
+    key: str,
+    date_from: date,
+    date_to: date,
+    project_id: uuid.UUID | None = None,
+    match: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    """Biaya & token per nilai tag X-Request-Tags (LGW-V1-06), dari tabel `requests`.
+    `match` = filter containment (index GIN), mis. key=stage + match job=abc → biaya per tahap
+    satu job."""
+    start = datetime.combine(date_from, time.min, UTC)
+    end = datetime.combine(date_to + timedelta(days=1), time.min, UTC)
+    value = Request.tags[key].astext
+    stmt = (
+        select(
+            value.label("value"),
+            func.count(),
+            func.count().filter(Request.status == "success"),
+            func.coalesce(func.sum(Request.prompt_tokens), 0),
+            func.coalesce(func.sum(Request.completion_tokens), 0),
+            func.coalesce(func.sum(Request.cost_usd), 0),
+        )
+        .where(
+            Request.created_at >= start,
+            Request.created_at < end,
+            Request.tags.has_key(key),
+        )
+        .group_by(value)
+        .order_by(func.sum(Request.cost_usd).desc(), value)
+    )
+    if project_id:
+        stmt = stmt.where(Request.project_id == project_id)
+    if match:
+        stmt = stmt.where(Request.tags.contains(match))
+    rows = (await session.execute(stmt)).all()
+    data = [
+        {
+            key: r[0],
+            "requests": int(r[1]),
+            "success": int(r[2]),
+            "prompt_tokens": int(r[3]),
+            "completion_tokens": int(r[4]),
+            "cost_usd": str(r[5]),
+        }
+        for r in rows
+    ]
+    return {
+        "key": key,
+        "from": date_from.isoformat(),
+        "to": date_to.isoformat(),
+        "match": match or {},
+        "data": data,
+        "total_cost_usd": str(sum((r[5] for r in rows), Decimal(0))),
     }
 
 

@@ -1,6 +1,7 @@
 """Konteks satu request publik: identitas, caller tracing, daftar attempt (fallback), dan header
 gateway. Dibuat controller (TASK-14), diisi router/service (TASK-13), dicatat usage (TASK-15)."""
 
+import re
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -12,11 +13,47 @@ from app.schemas.common import AuthContext
 from app.schemas.unified import RuntimeMeta, Usage
 from app.utils.errors import GatewayError
 from app.utils.helper import utcnow
+from app.utils.logger import get_logger
 
 if TYPE_CHECKING:
     from fastapi import Request
 
+log = get_logger(__name__)
 MAX_CALLER_LEN = 128
+# X-Request-Tags (LGW-V1-06): `job=…,kind=…,stage=…,agent=…`, maks 5 pasang. Nilai dibatasi ke
+# karakter ID (tanpa spasi/@) agar tidak bisa membawa PII seperti nama atau email.
+MAX_REQUEST_TAGS = 5
+_TAG_KEY = re.compile(r"[a-z][a-z0-9_]{0,31}")
+_TAG_VALUE = re.compile(r"[A-Za-z0-9._:/-]{1,64}")
+# kunci yang ditulis gateway sendiri ke requests.tags
+RESERVED_TAG_KEYS = frozenset(
+    {"usage_estimated", "runtime_meta_missing", "runtime_warnings", "gateway_warnings"}
+)
+
+
+def parse_request_tags(raw: str | None) -> tuple[dict[str, str], list[str]]:
+    """Header X-Request-Tags → (tags valid, warnings). Pasangan tidak valid diabaikan."""
+    tags: dict[str, str] = {}
+    warnings: list[str] = []
+    if not raw:
+        return tags, warnings
+    for part in (p.strip() for p in raw.split(",")):
+        if not part:
+            continue
+        key, sep, value = (s.strip() for s in part.partition("="))
+        valid = (
+            sep
+            and _TAG_KEY.fullmatch(key)
+            and _TAG_VALUE.fullmatch(value)
+            and key not in RESERVED_TAG_KEYS
+        )
+        if not valid:
+            warnings.append("request_tag_invalid")
+        elif len(tags) >= MAX_REQUEST_TAGS and key not in tags:
+            warnings.append("request_tags_truncated")
+        else:
+            tags[key] = value
+    return tags, list(dict.fromkeys(warnings))
 
 
 @dataclass
@@ -88,6 +125,9 @@ class RequestCtx:
         raw_id = state.get("request_id")
         request_id = uuid.UUID(str(raw_id)) if raw_id else uuid.uuid4()
         client = request.client.host if request.client else None
+        request_tags, tag_warnings = parse_request_tags(headers.get("x-request-tags"))
+        if tag_warnings:
+            log.warning("request_tags_ignored", warnings=tag_warnings)
         return cls(
             request_id=request_id,
             auth=auth,
@@ -98,8 +138,9 @@ class RequestCtx:
             user_agent=headers.get("user-agent"),
             caller_task=_clip(headers.get("x-caller-task")),
             caller_agent=_clip(headers.get("x-caller-agent")),
-            tags=dict(metadata or {}),
+            tags={**(metadata or {}), **request_tags},  # header menang atas metadata body
             request_body=body,
+            warnings=tag_warnings,
         )
 
     # ------------------------------------------------------------- attempts

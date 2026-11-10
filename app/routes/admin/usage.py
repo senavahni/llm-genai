@@ -20,6 +20,18 @@ async def usage(
     return await c.usage(date_from, date_to, group_by, project_id)
 
 
+@router.get("/usage/by-tag")
+async def usage_by_tag(
+    key: str = Query(pattern=r"^[a-z][a-z0-9_]{0,31}$", description="mis. job, kind, stage, agent"),
+    date_from: date | None = Query(default=None, alias="from"),
+    date_to: date | None = Query(default=None, alias="to"),
+    project_id: uuid.UUID | None = None,
+    match: str | None = Query(default=None, description="filter tag, mis. job:abc,agent:curator"),
+) -> dict[str, Any]:
+    """Biaya per tag X-Request-Tags (LGW-V1-06)."""
+    return await c.usage_by_tag(key, date_from, date_to, project_id, match)
+
+
 @router.get("/provider-billing")
 async def provider_billing(
     request: Request,

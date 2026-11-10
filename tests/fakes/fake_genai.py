@@ -272,8 +272,11 @@ class TextEmbeddingPipeline:
         raw = np.array([(sum(map(ord, text)) * (i + 1)) % 97 + 1 for i in range(cls.dim)], float)
         return (raw / np.linalg.norm(raw)).tolist()
 
+    batch_delay_s = 0.0  # simulasi lama inferensi per batch (uji prioritas)
+
     def embed_documents(self, texts: list[str]) -> list[list[float]]:
         self.batches.append(len(texts))
+        time.sleep(self.batch_delay_s)
         return [self.vector(t) for t in texts]
 
 

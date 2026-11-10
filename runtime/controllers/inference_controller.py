@@ -85,7 +85,9 @@ async def completions(request: Request) -> JSONResponse | StreamingResponse:
 
 async def embeddings(request: Request) -> JSONResponse:
     body = await _body(request)
-    result = await _state(request).service.embeddings(body, _request_id(request))
+    cancel = asyncio.Event()  # gateway putus (mis. timeout) → batch berikutnya tidak dijalankan
+    async with _watch_disconnect(request, cancel):
+        result = await _state(request).service.embeddings(body, _request_id(request), cancel)
     return JSONResponse(result)
 
 

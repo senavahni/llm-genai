@@ -12,6 +12,7 @@ from app.schemas.common import AuthContext
 from app.services import admin_query_service as q
 from app.services import provider_billing as billing
 from app.services import runtime_admin_service as rt
+from app.services.context import parse_request_tags
 from app.utils.errors import InvalidRequestError
 from app.utils.helper import utcnow
 
@@ -40,6 +41,27 @@ async def usage(
     )
     async with SessionLocal() as s:
         return await q.usage(s, query)
+
+
+async def usage_by_tag(
+    key: str,
+    date_from: date | None,
+    date_to: date | None,
+    project_id: uuid.UUID | None,
+    match: str | None,
+) -> dict[str, Any]:
+    """`match` = `job:abc,agent:curator` (pasangan tag yang harus cocok)."""
+    tags, warnings = parse_request_tags((match or "").replace(":", "="))
+    if warnings:
+        raise InvalidRequestError("match harus berformat key:value,…", param="match")
+    to = date_to or utcnow().date()
+    start = date_from or to.replace(day=1)
+    if start > to:
+        raise InvalidRequestError("from harus ≤ to", param="from")
+    async with SessionLocal() as s:
+        return await q.usage_by_tag(
+            s, key=key, date_from=start, date_to=to, project_id=project_id, match=tags
+        )
 
 
 PROVIDER_BILLING_MAX_DAYS = 366

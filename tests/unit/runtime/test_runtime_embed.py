@@ -141,6 +141,29 @@ async def test_gateway_provider_embed_through_runtime(specs):
     assert resp.runtime_meta is not None and resp.runtime_meta.device == "gpu"
 
 
+async def test_gateway_provider_truncate_priority_and_input_too_long(specs):  # LGW-V1-04
+    small = {
+        **specs,
+        "qwen3-embedding-0.6b": replace(
+            specs["qwen3-embedding-0.6b"],
+            config={**specs["qwen3-embedding-0.6b"].config, "max_input_tokens": 4},
+        ),
+    }
+    app = _app(small)
+    http = httpx2.AsyncClient(transport=httpx2.ASGITransport(app=app))
+    texts = ["satu", "teks ini terlalu panjang"]
+    with pytest.raises(e.InputTooLong, match=r"\[1\]") as info:
+        await _provider(http).embed(EMBED_MODEL, texts, None, {"priority": "bulk"})
+    assert info.value.http_status == 400 and not info.value.retryable
+    resp = await _provider(http).embed(
+        EMBED_MODEL, texts, None, {"priority": "bulk", "truncate": True}
+    )
+    _close(app)
+    assert len(resp.vectors) == 2
+    assert resp.runtime_meta.warnings == ["input_truncated:1"]
+    assert resp.usage.prompt_tokens == 3 + 4
+
+
 async def test_gateway_provider_runtime_down_is_provider_unavailable():
     http = httpx2.AsyncClient(
         transport=httpx2.MockTransport(

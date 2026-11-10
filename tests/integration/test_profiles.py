@@ -115,8 +115,15 @@ async def test_remote_embed_gpu_only_embedding_model_local(db):  # LGW-V1-03
     assert routes["embed-local"] == (True, [("local/qwen3-embedding-0.6b", 1)])  # tanpa fallback
     assert routes["embed-default"][1] == [("openai/text-embedding-3-small", 1)]  # tidak berubah
     assert all(not routes[a][0] for a in ("local", "autocomplete", "image"))
-    for alias in ("fast", "smart", "code", "vision"):
+    for alias in ("fast", "code", "vision"):
         assert routes[alias][1] == routes_of(_profile("remote-only"))[alias]
+    # keputusan v1 (LGW-V1-06): smart = gpt-5, creative = Claude → gpt-5, extract = gpt-5-mini
+    assert routes["smart"] == (True, [("openai/gpt-heavy", 1)])
+    assert routes["creative"] == (
+        True,
+        [("anthropic/claude-sonnet", 1), ("openai/gpt-heavy", 2)],
+    )
+    assert routes["extract"] == (True, [("openai/gpt-light", 1)])
     async with SessionLocal() as s:
         runtime_on = await s.scalar(select(Provider.is_enabled).where(Provider.code == "openvino"))
         pinned = await s.scalar(

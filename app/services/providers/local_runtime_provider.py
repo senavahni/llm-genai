@@ -32,6 +32,7 @@ from app.utils.errors import (
     DeviceOOM,
     DeviceUnavailable,
     GatewayError,
+    InputTooLong,
     ModelBusy,
     ModelLoadFailed,
     ModelNotWhitelisted,
@@ -55,6 +56,7 @@ RUNTIME_ERROR_CODES: dict[str, type[GatewayError]] = {
     "unsupported_size": UnsupportedSize,
     "unsupported_parameter": UnsupportedParameter,
     "context_length_exceeded": ContextLengthExceeded,
+    "input_too_long": InputTooLong,
     "cancelled": RequestCancelled,
 }
 

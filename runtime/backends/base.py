@@ -34,6 +34,32 @@ class ImageResult:
     warnings: tuple[str, ...] = ()  # mis. prompt dipotong ke 77 token CLIP
 
 
+@dataclass(frozen=True, slots=True)
+class EmbedPlan:
+    """Rencana embedding (LGW-V1-04): input tervalidasi, dipecah per batch (urutan tetap).
+    Setiap batch dijalankan dengan lease sendiri sehingga request interactive bisa menyela."""
+
+    batches: tuple[tuple[str, ...], ...]
+    prompt_tokens: int
+    dimensions: int | None = None  # dimensi MRL yang diminta; None = dimensi asli
+    warnings: tuple[str, ...] = ()
+
+
+def embedding_response(model: str, vectors: list[list[float]], plan: EmbedPlan) -> dict[str, Any]:
+    """Respons format OpenAI `/v1/embeddings`; peringatan rencana di `_warnings`."""
+    out: dict[str, Any] = {
+        "object": "list",
+        "model": model,
+        "data": [
+            {"object": "embedding", "index": i, "embedding": v} for i, v in enumerate(vectors)
+        ],
+        "usage": {"prompt_tokens": plan.prompt_tokens, "total_tokens": plan.prompt_tokens},
+    }
+    if plan.warnings:
+        out["_warnings"] = list(plan.warnings)
+    return out
+
+
 class LocalBackend(ABC):
     kind: ClassVar[str]  # openvino_llm | openvino_vlm | openvino_diffusion | openvino_embed
 
@@ -85,6 +111,14 @@ class LocalBackend(ABC):
 
     async def embed(self, req: dict[str, Any]) -> dict[str, Any]:
         """Respons format OpenAI `/v1/embeddings` (data[].embedding + usage)."""
+        raise CapabilityNotSupported(f"{self.spec.alias} tidak mendukung embeddings")
+
+    async def plan_embeddings(self, req: dict[str, Any]) -> EmbedPlan:
+        raise CapabilityNotSupported(f"{self.spec.alias} tidak mendukung embeddings")
+
+    async def embed_batch(
+        self, texts: tuple[str, ...], dimensions: int | None
+    ) -> list[list[float]]:
         raise CapabilityNotSupported(f"{self.spec.alias} tidak mendukung embeddings")
 
 

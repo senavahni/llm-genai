@@ -6,7 +6,12 @@ from app.schemas.common import AuthContext
 from app.schemas.converters import embedding_vector
 from app.schemas.openai_compat import EmbeddingRequest
 from app.services.context import RequestCtx
-from app.services.embedding_service import EmbeddingService, normalize_input
+from app.services.embedding_service import (
+    EmbeddingService,
+    input_type_of,
+    normalize_input,
+    parse_priority,
+)
 from app.services.router_service import Capabilities
 from app.services.usage_service import usage_service
 from app.utils.helper import estimate_tokens
@@ -17,6 +22,8 @@ async def create_embeddings(
 ) -> Response:
     router = get_router(request)
     inputs = normalize_input(body.input)
+    priority = parse_priority(request.headers.get("x-priority"))
+    input_type_of(body.provider_options())  # validasi sebelum kuota/routing
     ctx = RequestCtx.from_request(
         request,
         auth,
@@ -30,7 +37,7 @@ async def create_embeddings(
     await admit_and_start(ctx, est)
     try:
         resp, outcome = await EmbeddingService(router).execute(
-            ctx, inputs, body.dimensions, body.provider_options(), candidates
+            ctx, inputs, body.dimensions, body.provider_options(), candidates, priority
         )
     except BaseException as exc:
         await finish_error(ctx, exc)

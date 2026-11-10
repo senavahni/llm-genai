@@ -53,7 +53,12 @@ def build_state(
         events=events,
         catalog=catalog,
         managers=managers,
-        service=InferenceService(catalog, managers),
+        service=InferenceService(
+            catalog,
+            managers,
+            bulk_concurrency=settings.runtime_bulk_concurrency,
+            bulk_queue_timeout_s=settings.runtime_bulk_queue_timeout_s,
+        ),
         probe=probe,
     )
 

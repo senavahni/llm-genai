@@ -81,6 +81,20 @@ async def test_monthly_requests_quota(db):
         await svc.check(pid)
 
 
+async def test_monthly_budget_warns_at_80_percent(db):  # LGW-V1-06: plafon $150/bulan
+    now = datetime(2026, 11, 10, 10, 0, tzinfo=UTC)
+    svc = QuotaService(now=lambda: now)
+    pid = await _project(period="monthly", max_cost_usd=Decimal("150"), max_tokens=None)
+    await _usage(pid, date(2026, 11, 2), requests=10, cost="119.99")
+    assert await svc.check(pid) == []
+    svc.record(pid, cost=Decimal("0.02"))  # 120.01 ≥ 80% × 150
+    assert await svc.check(pid) == ["quota_80pct:monthly_cost"]
+    assert await svc.check(pid) == ["quota_80pct:monthly_cost"]  # tetap diberi tiap request
+    svc.record(pid, cost=Decimal("30"))
+    with pytest.raises(QuotaExceeded, match="bulanan"):
+        await svc.check(pid)
+
+
 async def test_v1_rate_limit_and_quota_headers(api):  # AC1 & AC4 end-to-end
     from sqlalchemy import update
 

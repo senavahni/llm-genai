@@ -7,8 +7,8 @@ import pytest
 
 from app.utils.errors import (
     CapabilityNotSupported,
-    ContextLengthExceeded,
     DeviceUnavailable,
+    InputTooLong,
     InvalidRequestError,
     ModelLoadFailed,
     UnsupportedParameter,
@@ -134,8 +134,49 @@ async def test_native_dimensions_accepted(fake, embed_spec):
 
 async def test_input_too_long_reports_index(fake, embed_spec):
     backend = await _loaded(embed_spec(max_input_tokens=5))
-    with pytest.raises(ContextLengthExceeded, match=r"\[1\]"):
+    with pytest.raises(InputTooLong, match=r"\[1\]") as info:
         await backend.embed({"input": ["pendek", "ini teks yang terlalu panjang sekali"]})
+    assert info.value.code == "input_too_long" and info.value.http_status == 400
+
+
+async def test_truncate_true_embeds_with_warning_and_capped_usage(fake, embed_spec):  # V1-04
+    backend = await _loaded(embed_spec(max_input_tokens=5))
+    texts = ["pendek", "ini teks yang terlalu panjang sekali"]  # 1+2 dan 6+2 token palsu
+    resp = await backend.embed({"input": texts, "truncate": True})
+    assert len(resp["data"]) == 2
+    assert resp["usage"]["prompt_tokens"] == 3 + 5  # token terpotong ke max_input_tokens
+    assert resp["_warnings"] == ["input_truncated:1"]
+    assert fake.TextEmbeddingPipeline.instances[-1].config.max_length == 5
+
+
+async def test_mrl_dimensions_slice_and_renormalize(fake, embed_spec):  # V1-04
+    backend = await _loaded(embed_spec(mrl_min_dimensions=2))
+    resp = await backend.embed({"input": ["a b"], "dimensions": 4})
+    vec = resp["data"][0]["embedding"]
+    full = np.array(fake.TextEmbeddingPipeline.vector("a b"))[:4]
+    assert vec == pytest.approx((full / np.linalg.norm(full)).tolist())
+    assert np.linalg.norm(vec) == pytest.approx(1.0)
+    for bad in (1, fake.TextEmbeddingPipeline.dim + 1):
+        with pytest.raises(UnsupportedParameter, match="dimensions harus 2–8"):
+            await backend.embed({"input": "x", "dimensions": bad})
+    with pytest.raises(InvalidRequestError):
+        await backend.embed({"input": "x", "dimensions": "4"})
+
+
+async def test_dimensions_rejected_clearly_without_mrl(fake, embed_spec):
+    backend = await _loaded(embed_spec())
+    with pytest.raises(UnsupportedParameter, match="bukan MRL"):
+        await backend.embed({"input": "x", "dimensions": 4})
+
+
+async def test_batches_limited_by_padded_tokens_keep_order(fake, embed_spec):  # V1-04
+    # token palsu = kata + 2; batas 12 token ber-padding per batch, max_batch 8
+    backend = await _loaded(embed_spec(max_batch=8, max_input_tokens=10, max_batch_tokens=12))
+    texts = ["a", "b", "c", "d", "e f g h i j", "k", "l"]  # 3,3,3,3,8,3,3 token
+    plan = await backend.plan_embeddings({"input": texts})
+    assert plan.batches == (("a", "b", "c", "d"), ("e f g h i j",), ("k", "l"))
+    assert [t for b in plan.batches for t in b] == texts
+    assert plan.prompt_tokens == 26
 
 
 def test_unknown_pooling_rejected(embed_spec):
@@ -152,8 +193,13 @@ async def test_unload(fake, embed_spec):
 async def test_other_backends_do_not_embed(embed_spec):
     from tests.fakes.fake_backend import FakeBackend
 
+    backend = FakeBackend(embed_spec())
     with pytest.raises(CapabilityNotSupported):
-        await FakeBackend(embed_spec()).embed({"input": "x"})
+        await backend.embed({"input": "x"})
+    with pytest.raises(CapabilityNotSupported):
+        await backend.plan_embeddings({"input": "x"})
+    with pytest.raises(CapabilityNotSupported):
+        await backend.embed_batch(("x",), None)
 
 
 async def test_device_manager_pins_embed_model_and_rejects_cpu(fake, embed_spec, monkeypatch):

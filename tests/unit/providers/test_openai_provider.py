@@ -79,6 +79,20 @@ async def test_drop_params_removes_sampling_fields_unsupported_by_model(mock_htt
     assert sent["seed"] == 7
 
 
+async def test_json_schema_response_format_passed_as_is(mock_http, settings):  # LGW-V1-06
+    http, rec = mock_http(lambda r: json_response(CHAT_OK))
+    rf = {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "kota",
+            "strict": True,
+            "schema": {"type": "object", "properties": {}, "additionalProperties": False},
+        },
+    }
+    await _provider(http, settings).chat(MODEL, _req(response_format=rf))
+    assert rec.last_json["response_format"] == rf
+
+
 async def test_tools_json_mode_image_and_provider_options_passthrough(mock_http, settings):
     http, rec = mock_http(
         lambda r: json_response(

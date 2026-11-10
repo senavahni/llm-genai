@@ -25,6 +25,7 @@ from app.utils.errors import UpstreamError
 
 DEFAULT_MAX_TOKENS = 4096
 GATEWAY_ONLY_OPTIONS = frozenset({"include_reasoning"})
+JSON_OBJECT_INSTRUCTION = "Respond with a single valid JSON object only, without any other text."
 
 STOP_REASON_MAP = {
     "end_turn": "stop",
@@ -126,12 +127,19 @@ def map_tool_choice(tool_choice: str | dict[str, Any] | None) -> dict[str, Any] 
 def build_payload(model: ModelConfig, req: UnifiedChatRequest) -> AnthropicPayload:
     system, messages = build_messages(req.messages)
     prefill: str | None = None
-    rf_type = (req.response_format or {}).get("type")
-    if rf_type in ("json_object", "json_schema") and (
-        model.config.get("json_mode_strategy") == "prefill"
-    ):
-        prefill = "{"
-        messages.append({"role": "assistant", "content": prefill})
+    rf = req.response_format or {}
+    rf_type = rf.get("type")
+    schema = (rf.get("json_schema") or {}).get("schema") if rf_type == "json_schema" else None
+    output_config: dict[str, Any] | None = None
+    if schema:
+        # structured outputs native (GA): output_config.format, bukan prefill (400 di model 4.6+)
+        output_config = {"format": {"type": "json_schema", "schema": schema}}
+    elif rf_type in ("json_object", "json_schema"):
+        if model.config.get("json_mode_strategy") == "prefill":  # model lama saja
+            prefill = "{"
+            messages.append({"role": "assistant", "content": prefill})
+        else:  # tanpa skema: Anthropic tidak punya JSON mode bebas skema → instruksi system
+            system = "\n\n".join(p for p in (system, JSON_OBJECT_INSTRUCTION) if p)
 
     payload: dict[str, Any] = {
         "model": model.upstream_name,
@@ -154,6 +162,7 @@ def build_payload(model: ModelConfig, req: UnifiedChatRequest) -> AnthropicPaylo
         if req.tools
         else None,
         "tool_choice": map_tool_choice(req.tool_choice) if req.tools else None,
+        "output_config": output_config,
     }
     for k, v in optional.items():
         if v is not None:

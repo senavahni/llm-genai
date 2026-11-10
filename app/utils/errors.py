@@ -192,6 +192,13 @@ class ContextLengthExceeded(InvalidRequestError):
     code = "context_length_exceeded"
 
 
+class InputTooLong(InvalidRequestError):
+    """Input embedding melebihi max_input_tokens model (LGW-V1-04); pesan memuat indeks."""
+
+    code = "input_too_long"
+    default_param = "input"
+
+
 class Conflict(GatewayError):
     """Bentrok state: If-Match tidak cocok, entitas masih dipakai, alias duplikat."""
 

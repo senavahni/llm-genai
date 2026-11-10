@@ -17,9 +17,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import SessionLocal
 from app.models import Quota, UsageDaily
 from app.utils.errors import QuotaExceeded
+from app.utils.logger import get_logger
 
+log = get_logger(__name__)
 QUOTA_CACHE_S = 60.0
 USAGE_CACHE_S = 30.0
+WARN_RATIO = Decimal("0.8")  # peringatan saat pemakaian ≥ 80% batas (LGW-V1-06)
 
 
 @dataclass(frozen=True, slots=True)
@@ -83,6 +86,7 @@ class QuotaService:
         self.now, self.clock = now, clock
         self._rules: dict[uuid.UUID, tuple[float, list[QuotaRule]]] = {}
         self._usage: dict[tuple[uuid.UUID, str], _UsageEntry] = {}
+        self._warned: set[tuple[uuid.UUID, str, date]] = set()
 
     def invalidate(self, project_id: uuid.UUID | None = None) -> None:
         if project_id is None:
@@ -143,9 +147,38 @@ class QuotaService:
         self._usage[key] = _UsageEntry(start, base, Totals(), self.clock())
         return base
 
-    async def check(self, project_id: uuid.UUID | None, images: int = 0) -> None:
+    def _near_limit(self, project_id: uuid.UUID, rule: QuotaRule, used: Totals) -> list[str]:
+        """Metrik yang sudah ≥ WARN_RATIO batas → `quota_80pct:<periode>_<metrik>`."""
+        pairs = (
+            ("requests", used.requests, rule.max_requests),
+            ("tokens", used.tokens, rule.max_tokens),
+            ("images", used.images, rule.max_images),
+            ("cost", used.cost, rule.max_cost_usd),
+        )
+        out = []
+        for metric, value, limit in pairs:
+            if limit is None or not limit or value < Decimal(str(limit)) * WARN_RATIO:
+                continue
+            warning = f"quota_80pct:{rule.period}_{metric}"
+            out.append(warning)
+            key = (project_id, warning, period_start(rule.period, self.now()))
+            if key not in self._warned:  # log sekali per periode
+                self._warned.add(key)
+                log.warning(
+                    "quota_near_limit",
+                    project_id=str(project_id),
+                    period=rule.period,
+                    metric=metric,
+                    used=str(value),
+                    limit=str(limit),
+                )
+        return out
+
+    async def check(self, project_id: uuid.UUID | None, images: int = 0) -> list[str]:
+        """Tolak bila kuota habis; kembalikan peringatan bila pemakaian ≥ 80% batas."""
         if project_id is None:
-            return  # key admin tanpa project: tidak berkuota
+            return []  # key admin tanpa project: tidak berkuota
+        warnings: list[str] = []
         for rule in await self._rules_for(project_id):
             used = await self._usage_for(project_id, rule.period)
             exceeded = None
@@ -164,6 +197,8 @@ class QuotaService:
                     f"Kuota {period} project habis ({exceeded}); reset dalam {retry} detik (UTC)",
                     headers={"Retry-After": str(retry)},
                 )
+            warnings += self._near_limit(project_id, rule, used)
+        return warnings
 
     def record(
         self,

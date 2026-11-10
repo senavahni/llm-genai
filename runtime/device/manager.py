@@ -22,6 +22,7 @@ from app.utils.logger import get_logger
 from runtime.backends import create_backend
 from runtime.backends.base import LocalBackend
 from runtime.core.catalog import LocalModelSpec
+from runtime.device.priority import BULK, INTERACTIVE, PrioritySemaphore
 
 log = get_logger("runtime.device")
 
@@ -67,7 +68,7 @@ class _NullRecorder:
 class LoadedModel:
     spec: LocalModelSpec
     backend: LocalBackend
-    semaphore: asyncio.Semaphore
+    semaphore: PrioritySemaphore
     loaded_at: float
     last_used: float
     load_ms: int
@@ -156,6 +157,7 @@ class DeviceManager:
                 "in_flight": m.in_flight,
                 "active": m.active,
                 "queued": max(0, m.in_flight - m.active),
+                "queued_bulk": m.semaphore.waiting(BULK),
                 "replicas": m.spec.replicas,
                 "n_ctx": m.spec.n_ctx,
                 "loaded_s_ago": round(now - m.loaded_at, 1),
@@ -197,9 +199,10 @@ class DeviceManager:
     # --------------------------------------------------------------- acquire
     @contextlib.asynccontextmanager
     async def acquire(
-        self, spec: LocalModelSpec, request_id: str | None = None
+        self, spec: LocalModelSpec, request_id: str | None = None, priority: int = INTERACTIVE
     ) -> AsyncIterator[Lease]:
-        """Pinjam model untuk satu inferensi: load/evict bila perlu, antre per model."""
+        """Pinjam model untuk satu inferensi: load/evict bila perlu, antre per model (prioritas
+        kecil dilayani dulu, FIFO untuk prioritas sama)."""
         start = time.monotonic()
         deadline = start + self.queue_timeout_s
         load_ms = 0
@@ -211,7 +214,9 @@ class DeviceManager:
             if entry.semaphore.locked():
                 remaining = deadline - time.monotonic()
                 try:
-                    await asyncio.wait_for(entry.semaphore.acquire(), timeout=max(remaining, 0.001))
+                    await asyncio.wait_for(
+                        entry.semaphore.acquire(priority), timeout=max(remaining, 0.001)
+                    )
                 except TimeoutError:
                     self._record(
                         "queue_timeout", spec, request_id=request_id, reason="model_queue_full"
@@ -220,7 +225,7 @@ class DeviceManager:
                         f"{spec.alias} sibuk: antrean > {self.queue_timeout_s:g} detik"
                     ) from None
             else:
-                await entry.semaphore.acquire()
+                await entry.semaphore.acquire(priority)
         except BaseException:
             entry.in_flight -= 1
             self._notify_idle()
@@ -383,7 +388,7 @@ class DeviceManager:
             self._loaded[spec.alias] = LoadedModel(
                 spec=current,
                 backend=backend,
-                semaphore=asyncio.Semaphore(current.replicas),
+                semaphore=PrioritySemaphore(current.replicas),
                 loaded_at=now,
                 last_used=now,
                 load_ms=load_ms,

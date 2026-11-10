@@ -45,7 +45,7 @@ async def admit_and_start(ctx: RequestCtx, est_tokens: int, *, images: int = 0) 
     reservation, headers = ratelimit_service.check(ctx.auth, est_tokens)
     ctx.reservation, ctx.rate_headers = reservation, headers
     try:
-        await quota_service.check(ctx.auth.project_id, images=images)
+        ctx.warnings += await quota_service.check(ctx.auth.project_id, images=images)
         await usage_service.start(ctx)
         metrics.request_started(ctx.endpoint)  # dikurangi di usage_service.finish
     except BaseException as exc:
